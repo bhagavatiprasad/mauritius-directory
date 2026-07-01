@@ -501,27 +501,6 @@ export default function UserPortal({
           </div>
         </div>
 
-        {/* Step-by-Step Setup Guide Box */}
-        <div className="bg-stone-50 rounded-xl border border-stone-200/80 p-5 space-y-3 shadow-xs">
-          <div className="flex items-center gap-2 text-stone-800 font-semibold text-xs border-b border-stone-200 pb-2.5">
-            <HelpCircle className="w-4 h-4 text-stone-500" />
-            <span>Setup Guide: Account Verification Link Email (SMTP)</span>
-          </div>
-          <p className="text-[11px] text-stone-500 leading-relaxed">
-            In live Supabase mode, self-signup requires setting up custom activation emails to function securely. Follow these steps to authorize and configure:
-          </p>
-          <ol className="list-decimal pl-4 space-y-1.5 text-[11px] text-stone-600 leading-relaxed">
-            <li>Open the <strong>Supabase Dashboard</strong> and click into your active project.</li>
-            <li>Go to <strong>Project Settings</strong> in the sidebar, then navigate to <strong>Auth</strong> configuration.</li>
-            <li>Enable the <strong>"Confirm Signup"</strong> setting under Email Templates.</li>
-            <li>
-              Set up an <strong>SMTP provider</strong> (e.g. SendGrid, Mailgun, Resend) in <strong>SMTP Settings</strong>. This removes Supabase's default rate-limit block on confirmation emails.
-            </li>
-            <li>
-              Add your domain/app's URL <code>{window.location.origin}</code> under <strong>Redirect URLs</strong> so verified users land back here to log in.
-            </li>
-          </ol>
-        </div>
       </div>
     );
   }
