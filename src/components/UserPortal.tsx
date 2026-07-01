@@ -25,7 +25,7 @@ interface UserPortalProps {
   categories: Category[];
   isLocalMode: boolean;
   userEmail: string | null;
-  onLogin: (email: string, isSignUp: boolean) => Promise<{ success: boolean; error?: string }>;
+  onLogin: (email: string, isSignUp: boolean, password?: string) => Promise<{ success: boolean; error?: string }>;
   onLogout: () => void;
   onSaveListing: (listingData: Omit<Business, 'id' | 'user_id' | 'status'> & { id?: string }) => Promise<{ success: boolean; error?: string }>;
   onDeleteListingImage: (listingId: string) => Promise<boolean>;
@@ -120,7 +120,7 @@ export default function UserPortal({
     }
 
     try {
-      const result = await onLogin(email, isSignUp);
+      const result = await onLogin(email, isSignUp, password);
       if (result.success) {
         if (isSignUp) {
           setAuthMessage(isLocalMode 

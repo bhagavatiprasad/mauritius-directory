@@ -39,6 +39,9 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [session, setSession] = useState<any>(null);
+  const [adminPassword, setAdminPassword] = useState<string>(() => {
+    return localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
+  });
 
   // App running Mode status
   const [isLocalMode, setIsLocalMode] = useState(!isSupabaseConfigured);
@@ -105,13 +108,21 @@ export default function App() {
   };
 
   // Auth Operations
-  const handleLogin = async (email: string, isSignUp: boolean): Promise<{ success: boolean; error?: string }> => {
+  const handleLogin = async (email: string, isSignUp: boolean, password?: string): Promise<{ success: boolean; error?: string }> => {
+    // Strictly guard hello.bhagavati@gmail.com from logging in without the secure master password
+    if (email.trim().toLowerCase() === 'hello.bhagavati@gmail.com') {
+      const storedPassword = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
+      if (!password || password !== storedPassword) {
+        return { success: false, error: 'Access Denied: Incorrect administrator security password.' };
+      }
+    }
+
     if (!isLocalMode && supabase) {
       try {
         if (isSignUp) {
           const { data, error } = await supabase.auth.signUp({
             email,
-            password: 'TemporarySecurePassword123!', // Standard requirement bypass or let users specify
+            password: password || 'TemporarySecurePassword123!', // Standard requirement bypass or let users specify
             options: {
               emailRedirectTo: window.location.origin
             }
@@ -121,7 +132,7 @@ export default function App() {
         } else {
           const { data, error } = await supabase.auth.signInWithPassword({
             email,
-            password: 'TemporarySecurePassword123!'
+            password: password || 'TemporarySecurePassword123!'
           });
           if (error) throw error;
           
@@ -148,7 +159,7 @@ export default function App() {
       localStorage.setItem('mauritius_directory_mock_user', email);
       
       // Auto promote target admin hello.bhagavati@gmail.com as the single true master admin
-      if (email === 'hello.bhagavati@gmail.com') {
+      if (email.trim().toLowerCase() === 'hello.bhagavati@gmail.com') {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
@@ -165,6 +176,11 @@ export default function App() {
     setIsAdmin(false);
     setSession(null);
     localStorage.removeItem('mauritius_directory_mock_user');
+  };
+
+  const handleUpdateAdminPassword = (newPass: string) => {
+    setAdminPassword(newPass);
+    localStorage.setItem('mauritius_directory_admin_password', newPass);
   };
 
   // User Save Listing (Strict Single Business Rule)
@@ -535,6 +551,7 @@ export default function App() {
             onUpdateListingDetails={handleUpdateListingDetails}
             onLogin={handleLogin}
             onLogout={handleLogout}
+            onChangeAdminPassword={handleUpdateAdminPassword}
           />
         )}
       </main>

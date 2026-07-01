@@ -44,8 +44,9 @@ interface AdminPortalProps {
   onDeleteListing: (id: string) => void;
   onToggleFeaturedListing: (id: string) => void;
   onUpdateListingDetails: (id: string, updatedFields: Partial<Business>) => void;
-  onLogin: (email: string, isSignUp: boolean) => Promise<{ success: boolean; error?: string }>;
+  onLogin: (email: string, isSignUp: boolean, password?: string) => Promise<{ success: boolean; error?: string }>;
   onLogout: () => void;
+  onChangeAdminPassword?: (newPassword: string) => void;
 }
 
 export default function AdminPortal({
@@ -62,10 +63,18 @@ export default function AdminPortal({
   onToggleFeaturedListing,
   onUpdateListingDetails,
   onLogin,
-  onLogout
+  onLogout,
+  onChangeAdminPassword
 }: AdminPortalProps) {
   // Navigation inside Admin Portal
-  const [adminTab, setAdminTab] = useState<'listings' | 'categories' | 'audit'>('listings');
+  const [adminTab, setAdminTab] = useState<'listings' | 'categories' | 'audit' | 'settings'>('listings');
+
+  // Password change states
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState<string | null>(null);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
 
   // Search & Filter state for ALL listings
   const [searchQuery, setSearchQuery] = useState('');
@@ -126,7 +135,7 @@ export default function AdminPortal({
       return;
     }
 
-    const res = await onLogin(adminEmailInput.trim(), false);
+    const res = await onLogin(adminEmailInput.trim(), false, adminPasswordInput);
     setAuthLoading(false);
     if (res.success) {
       addLog('Admin Login Successful', 'hello.bhagavati@gmail.com authenticated as directory administrator.', 'success');
@@ -225,6 +234,40 @@ export default function AdminPortal({
       setEditSuccess(false);
       setEditingBusiness(null);
     }, 1200);
+  };
+
+  const handleChangeAdminPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError(null);
+    setPasswordChangeSuccess(null);
+
+    const storedPassword = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
+    if (currentPasswordInput !== storedPassword) {
+      setPasswordChangeError('Current administrator password is incorrect.');
+      return;
+    }
+
+    if (newPasswordInput.length < 8) {
+      setPasswordChangeError('New password must be at least 8 characters long.');
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPasswordChangeError('New passwords do not match.');
+      return;
+    }
+
+    if (onChangeAdminPassword) {
+      onChangeAdminPassword(newPasswordInput);
+    } else {
+      localStorage.setItem('mauritius_directory_admin_password', newPasswordInput);
+    }
+
+    setPasswordChangeSuccess('Administrator security password successfully updated!');
+    setCurrentPasswordInput('');
+    newPasswordInput && setNewPasswordInput('');
+    confirmPasswordInput && setConfirmPasswordInput('');
+    addLog('Password Changed', 'Master administrator security credentials updated.', 'warn');
   };
 
   // Export full registry backup as JSON file
@@ -426,6 +469,16 @@ export default function AdminPortal({
           }`}
         >
           Audit Activity Logs
+        </button>
+        <button
+          onClick={() => setAdminTab('settings')}
+          className={`px-4 py-2.5 font-bold text-xs uppercase tracking-wider border-b-2 transition-colors ${
+            adminTab === 'settings' 
+              ? 'border-stone-950 text-stone-950' 
+              : 'border-transparent text-stone-500 hover:text-stone-900'
+          }`}
+        >
+          Security Settings
         </button>
       </div>
 
@@ -774,6 +827,80 @@ export default function AdminPortal({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {adminTab === 'settings' && (
+        <div className="max-w-md mx-auto bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-6 animate-in fade-in duration-200" id="admin-security-settings">
+          <div className="border-b border-stone-100 pb-3 flex items-center gap-2">
+            <Lock className="w-5 h-5 text-amber-500" />
+            <div>
+              <h3 className="font-semibold text-stone-950 text-sm">
+                Change Security Password
+              </h3>
+              <p className="text-[10px] text-stone-400 font-medium">Update master credentials for hello.bhagavati@gmail.com</p>
+            </div>
+          </div>
+
+          {passwordChangeError && (
+            <div className="p-3 bg-red-50 border border-red-150 rounded-lg text-red-700 text-xs flex gap-2 items-start animate-in fade-in">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+              <span className="font-medium leading-relaxed">{passwordChangeError}</span>
+            </div>
+          )}
+
+          {passwordChangeSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs flex gap-2 items-start animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500 mt-0.5" />
+              <span className="font-semibold leading-relaxed">{passwordChangeSuccess}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleChangeAdminPasswordSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-stone-600 block">Current Password</label>
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={currentPasswordInput}
+                onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-stone-600 block">New Password</label>
+              <input
+                type="password"
+                required
+                placeholder="Minimum 8 characters"
+                value={newPasswordInput}
+                onChange={(e) => setNewPasswordInput(e.target.value)}
+                className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-stone-600 block">Confirm New Password</label>
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={confirmPasswordInput}
+                onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-3 bg-stone-900 hover:bg-stone-850 text-white text-xs font-bold rounded-lg transition-colors shadow-xs"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>Update Credentials</span>
+            </button>
+          </form>
         </div>
       )}
 
