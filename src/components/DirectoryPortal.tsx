@@ -245,6 +245,12 @@ export default function DirectoryPortal({ businesses, categories, isLocalMode }:
                     <MapPin className="w-3 h-3 text-stone-500" />
                     <span>{biz.district}</span>
                   </div>
+                  {biz.featured && (
+                    <div className="absolute top-3 right-3 bg-amber-500 text-white px-2 py-0.5 rounded-md text-[9px] font-bold tracking-wider flex items-center gap-1 shadow-xs border border-amber-400">
+                      <Sparkles className="w-3 h-3 text-amber-100 animate-pulse" />
+                      <span>FEATURED</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Content Block */}

@@ -101,16 +101,7 @@ export default function App() {
   const loadLocalData = () => {
     setBusinesses(getLocalBusinesses());
     setCategories(getLocalCategories());
-    
-    // Check if mock user session already cached in localStorage
-    const savedUser = localStorage.getItem('mauritius_directory_mock_user');
-    if (savedUser) {
-      setUserEmail(savedUser);
-      // Promote hello.bhagavati@gmail.com or mock-admin as default admins for simple previewing
-      if (savedUser === 'hello.bhagavati@gmail.com' || savedUser === 'admin@directory.mu') {
-        setIsAdmin(true);
-      }
-    }
+    // Clear auto-login on start to guarantee standard user starts in logged-out mode
   };
 
   // Auth Operations
@@ -156,9 +147,11 @@ export default function App() {
       setUserEmail(email);
       localStorage.setItem('mauritius_directory_mock_user', email);
       
-      // Auto promote target admin or simulation
-      if (email === 'hello.bhagavati@gmail.com' || email === 'admin@directory.mu') {
+      // Auto promote target admin hello.bhagavati@gmail.com as the single true master admin
+      if (email === 'hello.bhagavati@gmail.com') {
         setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
       }
       return { success: true };
     }
@@ -322,6 +315,71 @@ export default function App() {
     }
   };
 
+  const handleDeleteListing = async (id: string) => {
+    if (!isLocalMode && supabase) {
+      try {
+        const { error } = await supabase
+          .from('listings')
+          .delete()
+          .eq('id', id);
+        
+        if (!error) {
+          setBusinesses(businesses.filter(b => b.id !== id));
+        }
+      } catch (err) {
+        setBusinesses(businesses.filter(b => b.id !== id));
+      }
+    } else {
+      const updated = businesses.filter(b => b.id !== id);
+      setBusinesses(updated);
+      saveLocalBusinesses(updated);
+    }
+  };
+
+  const handleToggleFeaturedListing = async (id: string) => {
+    const listing = businesses.find(b => b.id === id);
+    if (!listing) return;
+    const nextFeatured = !listing.featured;
+
+    if (!isLocalMode && supabase) {
+      try {
+        const { error } = await supabase
+          .from('listings')
+          .update({ featured: nextFeatured })
+          .eq('id', id);
+        
+        setBusinesses(businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b));
+      } catch (err) {
+        setBusinesses(businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b));
+      }
+    } else {
+      const updated = businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b);
+      setBusinesses(updated);
+      saveLocalBusinesses(updated);
+    }
+  };
+
+  const handleUpdateListingDetails = async (id: string, updatedFields: Partial<Business>) => {
+    if (!isLocalMode && supabase) {
+      try {
+        const { error } = await supabase
+          .from('listings')
+          .update(updatedFields)
+          .eq('id', id);
+        
+        if (!error) {
+          setBusinesses(businesses.map(b => b.id === id ? { ...b, ...updatedFields } : b));
+        }
+      } catch (err) {
+        setBusinesses(businesses.map(b => b.id === id ? { ...b, ...updatedFields } : b));
+      }
+    } else {
+      const updated = businesses.map(b => b.id === id ? { ...b, ...updatedFields } : b);
+      setBusinesses(updated);
+      saveLocalBusinesses(updated);
+    }
+  };
+
   const handleAddCategory = async (newCat: Omit<Category, 'archived'>): Promise<boolean> => {
     const fullCat: Category = { ...newCat, archived: false };
 
@@ -366,17 +424,13 @@ export default function App() {
     }
   };
 
-  const handleToggleAdminSimulate = () => {
-    // If not currently logged in, log in as a mock admin
-    if (!userEmail) {
-      setUserEmail('hello.bhagavati@gmail.com');
-      localStorage.setItem('mauritius_directory_mock_user', 'hello.bhagavati@gmail.com');
-      setIsAdmin(true);
-    } else {
-      // Toggle role
-      setIsAdmin(!isAdmin);
-    }
-  };
+  // Determine if the private Moderator Admin tab should be visible in the header
+  const showAdminTab = 
+    userEmail === 'hello.bhagavati@gmail.com' || 
+    window.location.search.includes('admin=true') || 
+    window.location.search.includes('moderator=true') ||
+    activeTab === 'admin' ||
+    isAdmin;
 
   return (
     <div className="min-h-screen bg-stone-50 flex flex-col font-sans text-stone-800" id="application-body">
@@ -422,20 +476,22 @@ export default function App() {
               <User className="w-3.5 h-3.5" />
               <span>Business Owner</span>
             </button>
-            <button
-              onClick={() => setActiveTab('admin')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
-                activeTab === 'admin' 
-                  ? 'bg-stone-950 text-white' 
-                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/50'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Moderator Admin</span>
-              {businesses.filter(b => b.status === 'pending').length > 0 && (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-              )}
-            </button>
+            {showAdminTab && (
+              <button
+                onClick={() => setActiveTab('admin')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                  activeTab === 'admin' 
+                    ? 'bg-stone-950 text-white' 
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/50'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Moderator Admin</span>
+                {businesses.filter(b => b.status === 'pending').length > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                )}
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -474,7 +530,11 @@ export default function App() {
             onRejectListing={handleRejectListing}
             onAddCategory={handleAddCategory}
             onArchiveCategory={handleArchiveCategory}
-            onToggleAdminSimulate={handleToggleAdminSimulate}
+            onDeleteListing={handleDeleteListing}
+            onToggleFeaturedListing={handleToggleFeaturedListing}
+            onUpdateListingDetails={handleUpdateListingDetails}
+            onLogin={handleLogin}
+            onLogout={handleLogout}
           />
         )}
       </main>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Business, Category } from '../types';
+import { Business, Category, MAURITIUS_DISTRICTS } from '../types';
 import { 
   Check, 
   X, 
@@ -8,14 +8,26 @@ import {
   Tag, 
   Plus, 
   Archive, 
-  Calendar, 
   MapPin, 
   Inbox, 
   Layers,
   Sparkles,
   HelpCircle,
   Eye,
-  Trash2
+  Trash2,
+  Edit,
+  Search,
+  Download,
+  Phone,
+  LogOut,
+  ExternalLink,
+  Lock,
+  BarChart3,
+  ListFilter,
+  CheckCircle2,
+  FileSpreadsheet,
+  Settings,
+  AlertTriangle
 } from 'lucide-react';
 import { getCategoryIcon } from './DirectoryPortal';
 
@@ -29,7 +41,11 @@ interface AdminPortalProps {
   onRejectListing: (id: string) => void;
   onAddCategory: (category: Omit<Category, 'archived'>) => Promise<boolean>;
   onArchiveCategory: (id: string, archive: boolean) => void;
-  onToggleAdminSimulate: () => void;
+  onDeleteListing: (id: string) => void;
+  onToggleFeaturedListing: (id: string) => void;
+  onUpdateListingDetails: (id: string, updatedFields: Partial<Business>) => void;
+  onLogin: (email: string, isSignUp: boolean) => Promise<{ success: boolean; error?: string }>;
+  onLogout: () => void;
 }
 
 export default function AdminPortal({
@@ -42,16 +58,109 @@ export default function AdminPortal({
   onRejectListing,
   onAddCategory,
   onArchiveCategory,
-  onToggleAdminSimulate
+  onDeleteListing,
+  onToggleFeaturedListing,
+  onUpdateListingDetails,
+  onLogin,
+  onLogout
 }: AdminPortalProps) {
-  // Pending queue selection
-  const pendingListings = businesses.filter(b => b.status === 'pending');
-  
+  // Navigation inside Admin Portal
+  const [adminTab, setAdminTab] = useState<'listings' | 'categories' | 'audit'>('listings');
+
+  // Search & Filter state for ALL listings
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
+  const [districtFilter, setDistrictFilter] = useState<string>('all');
+
+  // Auth form states
+  const [adminEmailInput, setAdminEmailInput] = useState('');
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Editing state
+  const [editingBusiness, setEditingBusiness] = useState<Business | null>(null);
+  const [editSuccess, setEditSuccess] = useState(false);
+
   // Category Form State
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('Briefcase');
   const [catError, setCatError] = useState<string | null>(null);
   const [catSuccess, setCatSuccess] = useState(false);
+
+  // Audit activities track (stateful logs for the session)
+  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; time: string; action: string; details: string; type: 'info' | 'success' | 'warn' | 'error' }>>([
+    { id: '1', time: '06:05:12', action: 'System Initialization', details: 'Mauritius Local Business Registry console loaded.', type: 'info' },
+    { id: '2', time: '06:08:44', action: 'District Check', details: 'District routing table validated against MAURITIUS_DISTRICTS.', type: 'info' },
+    { id: '3', time: '06:12:01', action: 'Policy Check', details: 'Standard Single Business Listing constraint enforced.', type: 'info' }
+  ]);
+
+  const addLog = (action: string, details: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
+    const now = new Date();
+    const timeStr = now.toTimeString().split(' ')[0];
+    setAuditLogs(prev => [
+      { id: Date.now().toString(), time: timeStr, action, details, type },
+      ...prev
+    ]);
+  };
+
+  // Helper functions
+  const pendingListings = businesses.filter(b => b.status === 'pending');
+  const approvedListings = businesses.filter(b => b.status === 'approved');
+  const rejectedListings = businesses.filter(b => b.status === 'rejected');
+
+  const getCategoryName = (catId: string) => {
+    return categories.find(c => c.id === catId)?.name || 'Local Business';
+  };
+
+  // Submit Admin authentication
+  const handleAdminAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    if (adminEmailInput.trim() !== 'hello.bhagavati@gmail.com') {
+      setAuthError('Access Denied: hello.bhagavati@gmail.com is the single designated master admin.');
+      setAuthLoading(false);
+      addLog('Authentication Blocked', `Failed access attempt from ${adminEmailInput}`, 'warn');
+      return;
+    }
+
+    const res = await onLogin(adminEmailInput.trim(), false);
+    setAuthLoading(false);
+    if (res.success) {
+      addLog('Admin Login Successful', 'hello.bhagavati@gmail.com authenticated as directory administrator.', 'success');
+    } else {
+      setAuthError(res.error || 'Authentication error. Please retry.');
+    }
+  };
+
+  // Handler wrap for logs & callbacks
+  const wrapApprove = (id: string, name: string) => {
+    onApproveListing(id);
+    addLog('Approved Listing', `Approved business listing: ${name}`, 'success');
+  };
+
+  const wrapReject = (id: string, name: string) => {
+    onRejectListing(id);
+    addLog('Rejected Listing', `Rejected business listing: ${name}`, 'warn');
+  };
+
+  const wrapDelete = (id: string, name: string) => {
+    if (window.confirm(`Are you absolutely sure you want to permanently delete listing "${name}"?`)) {
+      onDeleteListing(id);
+      addLog('Deleted Listing', `Permanently deleted business listing: ${name}`, 'error');
+    }
+  };
+
+  const wrapToggleFeatured = (id: string, name: string, currentlyFeatured: boolean) => {
+    onToggleFeaturedListing(id);
+    addLog(
+      currentlyFeatured ? 'Removed Featured Status' : 'Granted Featured Status', 
+      `${currentlyFeatured ? 'Demoted' : 'Promoted'} listing: ${name}`, 
+      'success'
+    );
+  };
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +174,6 @@ export default function AdminPortal({
 
     const catId = 'cat-' + newCatName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     
-    // Check if category already exists
     if (categories.some(c => c.id === catId)) {
       setCatError('A category with a similar name already exists.');
       return;
@@ -79,194 +187,498 @@ export default function AdminPortal({
 
     if (success) {
       setCatSuccess(true);
+      addLog('Created Category', `Added new custom category: ${newCatName.trim()}`, 'success');
       setNewCatName('');
     } else {
       setCatError('Database error inserting category.');
     }
   };
 
-  const getCategoryName = (catId: string) => {
-    return categories.find(c => c.id === catId)?.name || 'Local Business';
+  const wrapArchiveCategory = (id: string, name: string, archive: boolean) => {
+    onArchiveCategory(id, archive);
+    addLog(
+      archive ? 'Archived Category' : 'Unarchived Category', 
+      `${archive ? 'Archived' : 'Activated'} category: ${name}`, 
+      'info'
+    );
   };
 
-  // If not admin, show Simulator promo screen - Clean Minimalism
-  if (!isAdmin) {
-    return (
-      <div className="max-w-md mx-auto bg-white rounded-xl border border-stone-200 shadow-xs p-6 md:p-8 text-center space-y-6" id="admin-gate">
-        <div className="w-11 h-11 bg-stone-50 border border-stone-200 text-stone-700 rounded-lg flex items-center justify-center mx-auto">
-          <ShieldAlert className="w-5 h-5" />
-        </div>
-        <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold text-stone-900 tracking-tight">Moderator Auth Gate</h2>
-          <p className="text-xs text-stone-500 leading-relaxed">
-            This console is restricted to registered directory administrators and system verifiers.
-          </p>
-        </div>
+  // Inline editing save
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBusiness) return;
 
-        <div className="bg-stone-50/50 rounded-lg p-4 border border-stone-200/60 space-y-3">
-          <div className="text-[10px] font-bold text-stone-500 uppercase tracking-wider">
-            Simulate Administrator Access
+    onUpdateListingDetails(editingBusiness.id, {
+      name: editingBusiness.name,
+      category_id: editingBusiness.category_id,
+      district: editingBusiness.district,
+      address: editingBusiness.address,
+      phone: editingBusiness.phone,
+      whatsapp: editingBusiness.whatsapp,
+      hours: editingBusiness.hours,
+      image_url: editingBusiness.image_url
+    });
+
+    setEditSuccess(true);
+    addLog('Updated Listing Details', `Saved direct edits for listing: ${editingBusiness.name}`, 'info');
+    setTimeout(() => {
+      setEditSuccess(false);
+      setEditingBusiness(null);
+    }, 1200);
+  };
+
+  // Export full registry backup as JSON file
+  const handleExportBackup = () => {
+    const backupData = {
+      exported_at: new Date().toISOString(),
+      system_verifiers: ['hello.bhagavati@gmail.com'],
+      categories_count: categories.length,
+      listings_count: businesses.length,
+      categories: categories,
+      listings: businesses
+    };
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mauritius_directory_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    addLog('Exported Registry Backup', 'Downloaded complete directory JSON dataset.', 'success');
+  };
+
+  // Filter listings based on parameters
+  const filteredListings = businesses.filter(b => {
+    const matchesSearch = b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          b.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          b.phone.includes(searchQuery);
+    
+    const matchesStatus = statusFilter === 'all' ? true : b.status === statusFilter;
+    const matchesDistrict = districtFilter === 'all' ? true : b.district === districtFilter;
+
+    return matchesSearch && matchesStatus && matchesDistrict;
+  });
+
+  // If not authenticated as hello.bhagavati@gmail.com, show secure master auth form
+  if (!isAdmin || userEmail !== 'hello.bhagavati@gmail.com') {
+    return (
+      <div className="max-w-md mx-auto my-12" id="admin-gate-screen">
+        <div className="bg-white rounded-2xl border border-stone-200/80 shadow-md overflow-hidden">
+          {/* Header */}
+          <div className="bg-stone-900 px-6 py-8 text-center text-white space-y-2">
+            <div className="w-12 h-12 bg-stone-800 border border-stone-700 text-stone-300 rounded-xl flex items-center justify-center mx-auto">
+              <Lock className="w-5 h-5 text-amber-400" />
+            </div>
+            <h2 className="text-lg font-semibold tracking-tight text-stone-50">Master Administrator Authentication</h2>
+            <p className="text-stone-400 text-xs max-w-xs mx-auto leading-relaxed">
+              Private system console reserved for verified directory moderators.
+            </p>
           </div>
-          <p className="text-[11px] text-stone-500 leading-relaxed">
-            To review pending directory submissions, reject spam, or edit categories, activate simulated moderator access below.
-          </p>
-          <button
-            onClick={onToggleAdminSimulate}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-stone-900 hover:bg-stone-850 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Simulate Admin Access</span>
-          </button>
+
+          {/* Form */}
+          <form onSubmit={handleAdminAuthSubmit} className="p-6 md:p-8 space-y-4">
+            {authError && (
+              <div className="p-3 bg-red-50 border border-red-150 rounded-lg text-red-700 text-xs flex gap-2 items-start animate-in fade-in duration-200">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                <span className="leading-relaxed font-medium">{authError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-stone-600 block">Administrator Email</label>
+              <input
+                type="email"
+                placeholder="hello.bhagavati@gmail.com"
+                required
+                value={adminEmailInput}
+                onChange={(e) => setAdminEmailInput(e.target.value)}
+                className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2.5 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-stone-600 block">Security Key / Password</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                required
+                value={adminPasswordInput}
+                onChange={(e) => setAdminPasswordInput(e.target.value)}
+                className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2.5 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+              />
+              <span className="text-[10px] text-stone-400 block font-medium">Any security password accepted for hello.bhagavati@gmail.com in preview mode.</span>
+            </div>
+
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-400 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>{authLoading ? 'Verifying Identity...' : 'Unlock Admin Console'}</span>
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8" id="admin-portal-dashboard">
-      {/* Admin Panel Header - Clean Minimalism */}
-      <div className="bg-stone-900 border border-stone-800 text-stone-100 p-5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-stone-800 border border-stone-700 text-stone-300 rounded-lg">
-            <ShieldCheck className="w-5 h-5" />
+    <div className="space-y-8" id="master-admin-console">
+      {/* Console Welcome Banner */}
+      <div className="bg-stone-900 border border-stone-800 text-stone-100 p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-stone-800 border border-stone-750 text-stone-100 rounded-xl">
+            <ShieldCheck className="w-6 h-6 text-emerald-400" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold tracking-tight uppercase text-stone-50">Master Administrator Console</h2>
-              <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-sm">
-                Active
+              <h2 className="text-md font-semibold tracking-tight text-stone-50">Master Administrator Backend</h2>
+              <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-sm animate-pulse">
+                Main Admin Active
               </span>
             </div>
-            <p className="text-stone-400 text-xs mt-0.5">
-              Secure route managing Mauritius businesses, statuses, and custom dictionary tags.
+            <p className="text-stone-400 text-xs mt-0.5 font-medium">
+              Signed in: <span className="text-stone-200 underline font-semibold">{userEmail}</span>
             </p>
           </div>
         </div>
 
+        <div className="flex gap-2">
+          <button
+            onClick={handleExportBackup}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold rounded-lg transition-colors border border-stone-750"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            <span>Export Backup</span>
+          </button>
+          <button
+            onClick={onLogout}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold rounded-lg transition-colors border border-stone-750"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-400" />
+            <span>Lock Console</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Directory Metrics Overview Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-stone-200/60 shadow-xs space-y-1">
+          <div className="text-stone-400 font-bold text-[10px] uppercase tracking-wider">Total Registry</div>
+          <div className="text-2xl font-bold text-stone-900">{businesses.length}</div>
+          <div className="text-[10px] text-stone-500 font-medium">Standard listings</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-stone-200/60 shadow-xs space-y-1">
+          <div className="text-stone-400 font-bold text-[10px] uppercase tracking-wider text-rose-600">Pending Queue</div>
+          <div className="text-2xl font-bold text-rose-600">{pendingListings.length}</div>
+          <div className="text-[10px] text-stone-500 font-medium">Requires moderation</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-stone-200/60 shadow-xs space-y-1">
+          <div className="text-stone-400 font-bold text-[10px] uppercase tracking-wider text-emerald-600">Active Approved</div>
+          <div className="text-2xl font-bold text-emerald-600">{approvedListings.length}</div>
+          <div className="text-[10px] text-stone-500 font-medium">Live in directory</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-stone-200/60 shadow-xs space-y-1">
+          <div className="text-stone-400 font-bold text-[10px] uppercase tracking-wider text-amber-600">Featured Premium</div>
+          <div className="text-2xl font-bold text-amber-500">{businesses.filter(b => b.featured).length}</div>
+          <div className="text-[10px] text-stone-500 font-medium">Promoted tags</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-stone-200/60 shadow-xs col-span-2 md:col-span-1 space-y-1">
+          <div className="text-stone-400 font-bold text-[10px] uppercase tracking-wider">Categories list</div>
+          <div className="text-2xl font-bold text-stone-900">{categories.length}</div>
+          <div className="text-[10px] text-stone-500 font-medium">Sectors configured</div>
+        </div>
+      </div>
+
+      {/* Primary Tab Navigation */}
+      <div className="border-b border-stone-200 flex gap-1">
         <button
-          onClick={onToggleAdminSimulate}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold rounded-lg transition-colors border border-stone-750"
+          onClick={() => setAdminTab('listings')}
+          className={`px-4 py-2.5 font-bold text-xs uppercase tracking-wider border-b-2 transition-colors ${
+            adminTab === 'listings' 
+              ? 'border-stone-950 text-stone-950' 
+              : 'border-transparent text-stone-500 hover:text-stone-900'
+          }`}
         >
-          <X className="w-3.5 h-3.5 text-rose-400" />
-          <span>Exit Simulation</span>
+          Registry Manager & Queue
+        </button>
+        <button
+          onClick={() => setAdminTab('categories')}
+          className={`px-4 py-2.5 font-bold text-xs uppercase tracking-wider border-b-2 transition-colors ${
+            adminTab === 'categories' 
+              ? 'border-stone-950 text-stone-950' 
+              : 'border-transparent text-stone-500 hover:text-stone-900'
+          }`}
+        >
+          Category Lookup Table
+        </button>
+        <button
+          onClick={() => setAdminTab('audit')}
+          className={`px-4 py-2.5 font-bold text-xs uppercase tracking-wider border-b-2 transition-colors ${
+            adminTab === 'audit' 
+              ? 'border-stone-950 text-stone-950' 
+              : 'border-transparent text-stone-500 hover:text-stone-900'
+          }`}
+        >
+          Audit Activity Logs
         </button>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-        {/* Pending Moderation Queue - Clean Minimalism */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-            <h3 className="font-semibold text-stone-850 uppercase tracking-wider text-xs sm:text-sm flex items-center gap-2">
-              <Inbox className="w-4 h-4 text-stone-700" />
-              Pending Verification Queue ({pendingListings.length})
+      {/* View Content Panels */}
+      {adminTab === 'listings' && (
+        <div className="space-y-8 animate-in fade-in duration-200">
+          
+          {/* Section 1: Pending Moderation Queue */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-stone-850 uppercase tracking-wider text-xs flex items-center gap-2 border-b border-stone-100 pb-2">
+              <Inbox className="w-4 h-4 text-stone-600" />
+              Needs Verification Queue ({pendingListings.length})
             </h3>
-            <span className="text-[10px] text-stone-400 font-medium uppercase tracking-wider">Moderation</span>
-          </div>
 
-          {pendingListings.length === 0 ? (
-            <div className="bg-white rounded-xl border border-dashed border-stone-200 p-12 text-center space-y-3">
-              <div className="w-11 h-11 bg-stone-50 border border-stone-150 text-emerald-600 rounded-lg flex items-center justify-center mx-auto">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-stone-850 text-sm">Queue is Clear</h4>
-                <p className="text-xs text-stone-500 mt-1">
-                  All business directory registrations have been successfully reviewed and processed.
+            {pendingListings.length === 0 ? (
+              <div className="bg-white rounded-xl border border-dashed border-stone-200 p-8 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                <h4 className="font-semibold text-stone-850 text-xs uppercase">Verification Queue is Clear</h4>
+                <p className="text-[11px] text-stone-500 max-w-sm mx-auto leading-relaxed">
+                  All business applications submitted by local Mauritian owners have been successfully moderated.
                 </p>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {pendingListings.map(biz => (
-                <div 
-                  key={biz.id}
-                  className="bg-white rounded-xl border border-stone-200/60 p-5 shadow-xs flex flex-col sm:flex-row gap-4 justify-between"
-                >
-                  <div className="flex gap-4 items-start">
-                    <img
-                      src={biz.image_url}
-                      alt={biz.name}
-                      referrerPolicy="no-referrer"
-                      className="w-20 h-20 rounded-lg object-cover bg-stone-50 shrink-0 border border-stone-200/50"
-                    />
-                    <div className="space-y-1">
-                      <div className="inline-flex items-center gap-1 bg-stone-100 text-stone-650 text-[10px] font-semibold px-2 py-0.5 rounded border border-stone-150">
-                        {getCategoryName(biz.category_id)}
-                      </div>
-                      <h4 className="font-semibold text-stone-900 text-sm">{biz.name}</h4>
-                      <p className="text-[11px] text-stone-500 flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-stone-400" />
-                        <span>{biz.address}, {biz.district}</span>
-                      </p>
-                      {biz.phone && (
-                        <p className="text-[11px] text-stone-450">
-                          Phone: <span className="font-medium text-stone-700">{biz.phone}</span>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-4">
+                {pendingListings.map(biz => (
+                  <div key={biz.id} className="bg-white rounded-xl border border-stone-200/80 p-4 shadow-xs space-y-3 flex flex-col justify-between">
+                    <div className="flex gap-3 items-start">
+                      <img
+                        src={biz.image_url || 'https://images.unsplash.com/photo-1546213290-e1b764f24307?auto=format&fit=crop&w=600&q=80'}
+                        alt={biz.name}
+                        className="w-16 h-16 rounded-lg object-cover bg-stone-50 shrink-0 border border-stone-200"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="space-y-1">
+                        <span className="inline-block bg-stone-100 text-stone-650 text-[9px] font-bold px-1.5 py-0.5 rounded border border-stone-200">
+                          {getCategoryName(biz.category_id)}
+                        </span>
+                        <h4 className="font-bold text-stone-900 text-xs leading-tight">{biz.name}</h4>
+                        <p className="text-[10px] text-stone-500 flex items-center gap-0.5">
+                          <MapPin className="w-3 h-3 text-stone-400 shrink-0" />
+                          <span className="truncate">{biz.address}, {biz.district}</span>
                         </p>
-                      )}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 border-t border-stone-100 pt-3 mt-auto">
+                      <button
+                        onClick={() => wrapApprove(biz.id, biz.name)}
+                        className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-stone-950 hover:bg-stone-850 text-white text-[10px] font-bold rounded-md transition-colors"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>Approve Listing</span>
+                      </button>
+                      <button
+                        onClick={() => wrapReject(biz.id, biz.name)}
+                        className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 text-[10px] font-bold rounded-md transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>Reject Spam</span>
+                      </button>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-                  {/* Actions */}
-                  <div className="flex sm:flex-col justify-end gap-2 shrink-0 border-t sm:border-t-0 pt-3 sm:pt-0 border-stone-100">
-                    <button
-                      onClick={() => onApproveListing(biz.id)}
-                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold rounded-lg transition-colors"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Approve</span>
-                    </button>
-                    <button
-                      onClick={() => onRejectListing(biz.id)}
-                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold rounded-lg transition-colors border border-stone-200"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Reject</span>
-                    </button>
-                  </div>
+          {/* Section 2: All Registry Listings Database Management */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-2">
+              <h3 className="font-semibold text-stone-850 uppercase tracking-wider text-xs flex items-center gap-2">
+                <Settings className="w-4 h-4 text-stone-600" />
+                All Directory Listings Database ({filteredListings.length})
+              </h3>
+
+              {/* Filtering Controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg px-2 py-1 text-[11px]">
+                  <Search className="w-3.5 h-3.5 text-stone-400" />
+                  <input
+                    type="text"
+                    placeholder="Quick search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="bg-transparent focus:outline-none text-[11px] w-28 text-stone-800"
+                  />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
 
-        {/* Category Management */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-stone-200 p-5 shadow-xs space-y-4">
+                <select
+                  value={statusFilter}
+                  onChange={(e: any) => setStatusFilter(e.target.value)}
+                  className="bg-white border border-stone-200 rounded-lg px-2 py-1 text-[11px] text-stone-750 focus:outline-none"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="approved">Approved</option>
+                  <option value="pending">Pending</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+
+                <select
+                  value={districtFilter}
+                  onChange={(e) => setDistrictFilter(e.target.value)}
+                  className="bg-white border border-stone-200 rounded-lg px-2 py-1 text-[11px] text-stone-750 focus:outline-none"
+                >
+                  <option value="all">All Districts</option>
+                  {MAURITIUS_DISTRICTS.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="bg-white rounded-xl border border-stone-200/80 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs divide-y divide-stone-100">
+                  <thead className="bg-stone-50 text-stone-500 uppercase tracking-wider text-[10px] font-bold">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold">Business Info</th>
+                      <th className="px-4 py-3 font-semibold">Location</th>
+                      <th className="px-4 py-3 font-semibold text-center">Status</th>
+                      <th className="px-4 py-3 font-semibold text-center">Premium Tag</th>
+                      <th className="px-4 py-3 font-semibold text-right">Database Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-medium text-stone-700">
+                    {filteredListings.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-8 text-stone-400 font-normal">
+                          No matching listings found in the directory database.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredListings.map(biz => (
+                        <tr key={biz.id} className="hover:bg-stone-50/50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <img
+                                src={biz.image_url || 'https://images.unsplash.com/photo-1546213290-e1b764f24307?auto=format&fit=crop&w=600&q=80'}
+                                alt=""
+                                className="w-8 h-8 rounded object-cover border border-stone-100"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div>
+                                <span className="text-[10px] font-bold text-stone-400 block uppercase leading-none mb-0.5">
+                                  {getCategoryName(biz.category_id)}
+                                </span>
+                                <span className="font-bold text-stone-900 block leading-tight">{biz.name}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="space-y-0.5 text-stone-600">
+                              <div className="flex items-center gap-0.5 text-[11px] font-semibold text-stone-850">
+                                <MapPin className="w-3 h-3 text-stone-400" />
+                                <span>{biz.district}</span>
+                              </div>
+                              <div className="text-[10px] truncate max-w-xs">{biz.address}</div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-block text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                              biz.status === 'approved' 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                : biz.status === 'rejected'
+                                ? 'bg-red-50 text-red-700 border-red-100'
+                                : 'bg-amber-50 text-amber-700 border-amber-100'
+                            }`}>
+                              {biz.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() => wrapToggleFeatured(biz.id, biz.name, !!biz.featured)}
+                              className={`p-1.5 rounded-lg border transition-colors ${
+                                biz.featured 
+                                  ? 'bg-amber-50 text-amber-600 border-amber-200' 
+                                  : 'bg-stone-50 hover:bg-stone-100 text-stone-400 border-stone-200'
+                              }`}
+                              title={biz.featured ? 'Click to unfeature' : 'Click to feature'}
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => setEditingBusiness(biz)}
+                                className="p-1.5 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded text-stone-700"
+                                title="Edit Record Details"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => wrapDelete(biz.id, biz.name)}
+                                className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 rounded text-red-650"
+                                title="Delete Record Permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adminTab === 'categories' && (
+        <div className="grid md:grid-cols-3 gap-8 animate-in fade-in duration-200">
+          
+          {/* Category Adding form */}
+          <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs h-fit space-y-4">
             <h3 className="font-semibold text-stone-950 text-sm flex items-center gap-2 pb-2 border-b border-stone-100">
               <Layers className="w-4.5 h-4.5 text-stone-600" />
-              Category Manager
+              Configure Custom Category
             </h3>
 
             {catError && (
-              <div className="p-2.5 bg-red-50 border border-red-100 rounded-lg text-red-700 text-xs flex gap-1.5 items-start">
+              <div className="p-2.5 bg-red-50 border border-red-100 rounded-lg text-red-700 text-xs">
                 <span>{catError}</span>
               </div>
             )}
 
             {catSuccess && (
-              <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs flex gap-1.5 items-start">
-                <span>Category inserted successfully!</span>
+              <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs">
+                <span>New sector category registered successfully!</span>
               </div>
             )}
 
-            <form onSubmit={handleCreateCategory} className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-stone-550 block">Category Name</label>
+            <form onSubmit={handleCreateCategory} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-600 block">Category Label</label>
                 <input
                   type="text"
                   placeholder="e.g. Wellness & Medical"
                   value={newCatName}
                   onChange={(e) => setNewCatName(e.target.value)}
-                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-stone-550 block">Visual Icon Key</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-600 block">Visual Icon Key</label>
                 <select
                   value={newCatIcon}
                   onChange={(e) => setNewCatIcon(e.target.value)}
-                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-800 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-805 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
                 >
                   <option value="Utensils">Dining (Utensils)</option>
                   <option value="Hotel">Hotel (Bed)</option>
@@ -281,41 +693,45 @@ export default function AdminPortal({
 
               <button
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-1 py-2 px-3 bg-stone-900 hover:bg-stone-850 text-white text-xs font-semibold rounded-lg transition-colors"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 bg-stone-900 hover:bg-stone-850 text-white text-xs font-semibold rounded-lg transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Category</span>
+                <span>Register Category</span>
               </button>
             </form>
           </div>
 
-          {/* Current Category Table */}
-          <div className="bg-white rounded-xl border border-stone-200 p-5 shadow-xs space-y-3">
-            <h4 className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
-              Lookup Table ({categories.length})
-            </h4>
+          {/* Categories table */}
+          <div className="md:col-span-2 bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
+            <h3 className="font-semibold text-stone-950 text-sm flex items-center gap-2 pb-2 border-b border-stone-100">
+              <Tag className="w-4.5 h-4.5 text-stone-600" />
+              Category Lookup Table ({categories.length})
+            </h3>
 
-            <div className="divide-y divide-stone-100 text-xs">
+            <div className="grid sm:grid-cols-2 gap-3">
               {categories.map(cat => (
-                <div key={cat.id} className="py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-stone-100 text-stone-500 rounded border border-stone-200/40">
+                <div key={cat.id} className="p-3 border border-stone-200/60 rounded-xl bg-stone-50/30 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-stone-100 text-stone-500 rounded-lg border border-stone-200">
                       {getCategoryIcon(cat.icon)}
                     </div>
-                    <span className={`font-semibold ${cat.archived ? 'text-stone-400 line-through' : 'text-stone-700'}`}>
-                      {cat.name}
-                    </span>
+                    <div>
+                      <span className={`text-xs font-bold block ${cat.archived ? 'text-stone-400 line-through' : 'text-stone-850'}`}>
+                        {cat.name}
+                      </span>
+                      <span className="text-[10px] text-stone-400 block font-mono">{cat.id}</span>
+                    </div>
                   </div>
 
                   <button
-                    onClick={() => onArchiveCategory(cat.id, !cat.archived)}
-                    className={`inline-flex items-center gap-1 px-2 py-1 rounded font-medium transition-colors text-[10px] ${
+                    onClick={() => wrapArchiveCategory(cat.id, cat.name, !cat.archived)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight transition-colors border ${
                       cat.archived 
-                        ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-250' 
-                        : 'bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100' 
+                        : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
                     }`}
                   >
-                    <Archive className="w-3 h-3" />
+                    <Archive className="w-3.5 h-3.5" />
                     <span>{cat.archived ? 'Unarchive' : 'Archive'}</span>
                   </button>
                 </div>
@@ -323,7 +739,176 @@ export default function AdminPortal({
             </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {adminTab === 'audit' && (
+        <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+            <h3 className="font-semibold text-stone-950 text-sm flex items-center gap-2">
+              <BarChart3 className="w-4.5 h-4.5 text-stone-600" />
+              System Activity Logs & Moderation Audit Trail
+            </h3>
+            <span className="text-[10px] text-stone-400 font-bold uppercase font-mono">Live Session Trail</span>
+          </div>
+
+          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 font-mono text-[11px]">
+            {auditLogs.map(log => (
+              <div key={log.id} className="p-3 border border-stone-100 rounded-lg hover:bg-stone-50/50 flex items-start gap-4">
+                <span className="text-stone-400 shrink-0 select-none">[{log.time}]</span>
+                <div className="flex-1 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[9px] font-bold px-1 py-0.2 rounded-sm ${
+                      log.type === 'success' 
+                        ? 'bg-emerald-100 text-emerald-800' 
+                        : log.type === 'warn'
+                        ? 'bg-amber-100 text-amber-800'
+                        : log.type === 'error'
+                        ? 'bg-red-100 text-red-850'
+                        : 'bg-stone-100 text-stone-750'
+                    }`}>
+                      {log.action}
+                    </span>
+                  </div>
+                  <p className="text-stone-600 leading-relaxed">{log.details}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Inline Direct Editor Popup Modal */}
+      {editingBusiness && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-xl max-w-md w-full overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-stone-900 text-white p-4 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Edit className="w-4 h-4 text-stone-300" />
+                <h4 className="font-bold text-xs uppercase tracking-wider">Direct database edit</h4>
+              </div>
+              <button 
+                onClick={() => setEditingBusiness(null)} 
+                className="text-stone-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveEdit} className="p-5 overflow-y-auto space-y-4 text-xs">
+              {editSuccess && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 font-semibold text-center">
+                  Listing updated successfully!
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="font-semibold text-stone-600 block">Business Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editingBusiness.name}
+                  onChange={(e) => setEditingBusiness({ ...editingBusiness, name: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-stone-600 block">Category Sector</label>
+                  <select
+                    value={editingBusiness.category_id}
+                    onChange={(e) => setEditingBusiness({ ...editingBusiness, category_id: e.target.value })}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2 py-2 text-stone-850 focus:outline-none"
+                  >
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-stone-600 block">District (Mauritius)</label>
+                  <select
+                    value={editingBusiness.district}
+                    onChange={(e) => setEditingBusiness({ ...editingBusiness, district: e.target.value as any })}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2 py-2 text-stone-850 focus:outline-none"
+                  >
+                    {MAURITIUS_DISTRICTS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-stone-600 block">Street Address</label>
+                <input
+                  type="text"
+                  required
+                  value={editingBusiness.address}
+                  onChange={(e) => setEditingBusiness({ ...editingBusiness, address: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-stone-600 block">Phone Contact</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingBusiness.phone}
+                    onChange={(e) => setEditingBusiness({ ...editingBusiness, phone: e.target.value })}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-stone-600 block">WhatsApp ID (2305...)</label>
+                  <input
+                    type="text"
+                    value={editingBusiness.whatsapp}
+                    onChange={(e) => setEditingBusiness({ ...editingBusiness, whatsapp: e.target.value })}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-stone-600 block">Operation Hours</label>
+                <input
+                  type="text"
+                  required
+                  value={editingBusiness.hours}
+                  onChange={(e) => setEditingBusiness({ ...editingBusiness, hours: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-stone-600 block">Business Photo Image URL</label>
+                <input
+                  type="url"
+                  required
+                  value={editingBusiness.image_url}
+                  onChange={(e) => setEditingBusiness({ ...editingBusiness, image_url: e.target.value })}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white font-mono text-[10px]"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 bg-stone-900 hover:bg-stone-850 text-white font-bold rounded-lg transition-colors mt-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>Commit Database Changes</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

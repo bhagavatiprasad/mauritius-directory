@@ -12,6 +12,7 @@ export interface Business {
   hours: string;
   image_url: string;
   status: BusinessStatus;
+  featured?: boolean;
   created_at?: string;
 }
 
