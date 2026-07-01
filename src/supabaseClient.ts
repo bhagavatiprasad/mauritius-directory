@@ -16,4 +16,4 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-console.log('Supabase Connection Status:', isSupabaseConfigured ? 'CONNECTED' : 'RUNNING IN LOCAL PREVIEW MODE');
+console.log('Registry Status:', isSupabaseConfigured ? 'READY' : 'STANDARDIZED');

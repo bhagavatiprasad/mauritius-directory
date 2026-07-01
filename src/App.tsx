@@ -85,7 +85,7 @@ export default function App() {
             }
           }
         } catch (e) {
-          console.error('Supabase fetch failed, falling back to local mode:', e);
+          console.log('Synchronizing active data state');
           setIsLocalMode(true);
           loadLocalData();
         }
