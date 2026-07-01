@@ -109,8 +109,10 @@ export default function App() {
 
   // Auth Operations
   const handleLogin = async (email: string, isSignUp: boolean, password?: string): Promise<{ success: boolean; error?: string }> => {
+    const emailLower = email.trim().toLowerCase();
+
     // Strictly guard hello.bhagavati@gmail.com from logging in without the secure master password
-    if (email.trim().toLowerCase() === 'hello.bhagavati@gmail.com') {
+    if (emailLower === 'hello.bhagavati@gmail.com') {
       const storedPassword = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
       if (!password || password !== storedPassword) {
         return { success: false, error: 'Access Denied: Incorrect administrator security password.' };
@@ -121,7 +123,7 @@ export default function App() {
       try {
         if (isSignUp) {
           const { data, error } = await supabase.auth.signUp({
-            email,
+            email: emailLower,
             password: password || 'TemporarySecurePassword123!', // Standard requirement bypass or let users specify
             options: {
               emailRedirectTo: window.location.origin
@@ -131,7 +133,7 @@ export default function App() {
           return { success: true };
         } else {
           const { data, error } = await supabase.auth.signInWithPassword({
-            email,
+            email: emailLower,
             password: password || 'TemporarySecurePassword123!'
           });
           if (error) throw error;
@@ -155,16 +157,55 @@ export default function App() {
       }
     } else {
       // Local fallback mode authentication
-      setUserEmail(email);
-      localStorage.setItem('mauritius_directory_mock_user', email);
-      
-      // Auto promote target admin hello.bhagavati@gmail.com as the single true master admin
-      if (email.trim().toLowerCase() === 'hello.bhagavati@gmail.com') {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
+      const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';
+      let storedUsers: Record<string, string> = {};
+      try {
+        storedUsers = JSON.parse(storedUsersRaw);
+      } catch (e) {
+        storedUsers = {};
       }
-      return { success: true };
+
+      if (isSignUp) {
+        if (storedUsers[emailLower]) {
+          return { success: false, error: 'An account with this email already exists. Please log in instead.' };
+        }
+        if (!password || password.length < 6) {
+          return { success: false, error: 'Password must be at least 6 characters long.' };
+        }
+        storedUsers[emailLower] = password;
+        localStorage.setItem('mauritius_directory_mock_users', JSON.stringify(storedUsers));
+        
+        setUserEmail(emailLower);
+        localStorage.setItem('mauritius_directory_mock_user', emailLower);
+        
+        if (emailLower === 'hello.bhagavati@gmail.com') {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
+        return { success: true };
+      } else {
+        // If it's the admin email, we already checked its password above
+        if (emailLower === 'hello.bhagavati@gmail.com') {
+          setUserEmail(emailLower);
+          localStorage.setItem('mauritius_directory_mock_user', emailLower);
+          setIsAdmin(true);
+          return { success: true };
+        }
+
+        const savedPassword = storedUsers[emailLower];
+        if (!savedPassword) {
+          return { success: false, error: 'No account found with this email. Please sign up first.' };
+        }
+        if (password !== savedPassword) {
+          return { success: false, error: 'Incorrect password. Please try again.' };
+        }
+
+        setUserEmail(emailLower);
+        localStorage.setItem('mauritius_directory_mock_user', emailLower);
+        setIsAdmin(false);
+        return { success: true };
+      }
     }
   };
 
@@ -212,7 +253,33 @@ export default function App() {
           
           if (error) throw error;
         } else {
-          // Insert
+          // Insert - first check limit and 24 hour rule
+          const userListings = businesses.filter(b => b.user_id === session.user.id);
+          if (userListings.length >= 5) {
+            return { success: false, error: 'Maximum business listing limit reached. You can only create up to 5 listings.' };
+          }
+
+          const lastCreated = userListings.reduce((latest, current) => {
+            if (!current.created_at) return latest;
+            if (!latest) return current;
+            return new Date(current.created_at).getTime() > new Date(latest.created_at).getTime() ? current : latest;
+          }, null as Business | null);
+
+          if (lastCreated?.created_at) {
+            const lastTime = new Date(lastCreated.created_at).getTime();
+            const elapsed = Date.now() - lastTime;
+            const limitMs = 24 * 60 * 60 * 1000;
+            if (elapsed < limitMs) {
+              const remainingMs = limitMs - elapsed;
+              const remainingHrs = Math.floor(remainingMs / (1000 * 60 * 60));
+              const remainingMins = Math.ceil((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+              return { 
+                success: false, 
+                error: `Cool-down Limit: You can only list one business every 24 hours. Please wait ${remainingHrs} hours and ${remainingMins} minutes before listing another business.` 
+              };
+            }
+          }
+
           const { error } = await supabase
             .from('listings')
             .insert({
@@ -225,7 +292,8 @@ export default function App() {
               whatsapp: listingData.whatsapp,
               hours: listingData.hours,
               image_url: listingData.image_url,
-              status
+              status,
+              created_at: new Date().toISOString()
             });
           
           if (error) throw error;
@@ -245,7 +313,35 @@ export default function App() {
     } else {
       // Local Mode listing saving
       const updatedList = [...businesses];
-      const matchIndex = updatedList.findIndex(b => b.user_id === userEmail);
+      const userListings = updatedList.filter(b => b.user_id === userEmail);
+
+      // Check limits if inserting a new listing
+      if (!listingData.id) {
+        if (userListings.length >= 5) {
+          return { success: false, error: 'Maximum business listing limit reached. You can only create up to 5 listings.' };
+        }
+
+        const lastCreated = userListings.reduce((latest, current) => {
+          if (!current.created_at) return latest;
+          if (!latest) return current;
+          return new Date(current.created_at).getTime() > new Date(latest.created_at).getTime() ? current : latest;
+        }, null as Business | null);
+
+        if (lastCreated?.created_at) {
+          const lastTime = new Date(lastCreated.created_at).getTime();
+          const elapsed = Date.now() - lastTime;
+          const limitMs = 24 * 60 * 60 * 1000;
+          if (elapsed < limitMs) {
+            const remainingMs = limitMs - elapsed;
+            const remainingHrs = Math.floor(remainingMs / (1000 * 60 * 60));
+            const remainingMins = Math.ceil((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+            return { 
+              success: false, 
+              error: `Cool-down Limit: You can only list one business every 24 hours. Please wait ${remainingHrs} hours and ${remainingMins} minutes before listing another business.` 
+            };
+          }
+        }
+      }
 
       const savedRecord: Business = {
         id: listingData.id || `local-biz-${Date.now()}`,
@@ -258,8 +354,13 @@ export default function App() {
         whatsapp: listingData.whatsapp,
         hours: listingData.hours,
         image_url: listingData.image_url,
-        status: 'pending' // Reverts to pending for moderator approval loop simulation
+        status: 'pending', // Reverts to pending for moderator approval loop simulation
+        created_at: listingData.id 
+          ? (businesses.find(b => b.id === listingData.id)?.created_at || new Date().toISOString()) 
+          : new Date().toISOString()
       };
+
+      const matchIndex = updatedList.findIndex(b => b.id === savedRecord.id);
 
       if (matchIndex >= 0) {
         updatedList[matchIndex] = savedRecord;
@@ -532,6 +633,7 @@ export default function App() {
             onLogout={handleLogout}
             onSaveListing={handleSaveListing}
             onDeleteListingImage={handleDeleteListingImage}
+            onDeleteListing={handleDeleteListing}
           />
         )}
 
