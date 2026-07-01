@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Business, Category, MAURITIUS_DISTRICTS } from '../types';
+import { Business, Category, MAURITIUS_DISTRICTS, UserAccount } from '../types';
 import { 
   Check, 
   X, 
@@ -27,7 +27,10 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Settings,
-  AlertTriangle
+  AlertTriangle,
+  Users,
+  UserPlus,
+  Info
 } from 'lucide-react';
 import { getCategoryIcon } from './DirectoryPortal';
 
@@ -37,6 +40,10 @@ interface AdminPortalProps {
   isLocalMode: boolean;
   isAdmin: boolean;
   userEmail: string | null;
+  users?: UserAccount[];
+  onUpdateUser?: (userId: string, newEmail: string, newPassword?: string) => Promise<boolean>;
+  onDeleteUser?: (userId: string) => Promise<boolean>;
+  onAddUser?: (email: string, password?: string) => Promise<boolean>;
   onApproveListing: (id: string) => void;
   onRejectListing: (id: string) => void;
   onAddCategory: (category: Omit<Category, 'archived'>) => Promise<boolean>;
@@ -55,6 +62,10 @@ export default function AdminPortal({
   isLocalMode,
   isAdmin,
   userEmail,
+  users = [],
+  onUpdateUser,
+  onDeleteUser,
+  onAddUser,
   onApproveListing,
   onRejectListing,
   onAddCategory,
@@ -67,7 +78,21 @@ export default function AdminPortal({
   onChangeAdminPassword
 }: AdminPortalProps) {
   // Navigation inside Admin Portal
-  const [adminTab, setAdminTab] = useState<'listings' | 'categories' | 'audit' | 'settings'>('listings');
+  const [adminTab, setAdminTab] = useState<'listings' | 'categories' | 'users' | 'audit' | 'settings'>('listings');
+
+  // User Accounts Admin states
+  const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
+  const [userEditEmail, setUserEditEmail] = useState('');
+  const [userEditPassword, setUserEditPassword] = useState('');
+  const [userEditSuccess, setUserEditSuccess] = useState<string | null>(null);
+  const [userEditError, setUserEditError] = useState<string | null>(null);
+
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [userAddSuccess, setUserAddSuccess] = useState<string | null>(null);
+  const [userAddError, setUserAddError] = useState<string | null>(null);
+
+  const [usersSearchQuery, setUsersSearchQuery] = useState('');
 
   // Password change states
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
@@ -270,6 +295,77 @@ export default function AdminPortal({
     addLog('Password Changed', 'Master administrator security credentials updated.', 'warn');
   };
 
+  const handleEditUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserEditError(null);
+    setUserEditSuccess(null);
+
+    if (!editingUser) return;
+    if (!userEditEmail.trim()) {
+      setUserEditError('Email address cannot be empty.');
+      return;
+    }
+
+    if (onUpdateUser) {
+      const success = await onUpdateUser(editingUser.id, userEditEmail.trim(), userEditPassword || undefined);
+      if (success) {
+        setUserEditSuccess('User account updated successfully!');
+        addLog('Updated User Account', `Modified email/credentials for user: ${userEditEmail.trim()}`, 'info');
+        setTimeout(() => {
+          setEditingUser(null);
+          setUserEditSuccess(null);
+        }, 1500);
+      } else {
+        setUserEditError('Failed to update user account. The email might already be registered.');
+      }
+    }
+  };
+
+  const handleDeleteUserClick = async (user: UserAccount) => {
+    if (user.email === 'hello.bhagavati@gmail.com') {
+      alert('Security Protection: You cannot delete the Master Admin account.');
+      return;
+    }
+
+    if (window.confirm(`Are you absolutely sure you want to permanently delete user account "${user.email}" and all their associated business listings? This action is irreversible.`)) {
+      if (onDeleteUser) {
+        const success = await onDeleteUser(user.id);
+        if (success) {
+          addLog('Deleted User Account', `Permanently deleted user: ${user.email}`, 'error');
+          alert(`Successfully deleted user account ${user.email} and their listings.`);
+        } else {
+          alert('Failed to delete user account.');
+        }
+      }
+    }
+  };
+
+  const handleAddUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserAddError(null);
+    setUserAddSuccess(null);
+
+    if (!newUserEmail.trim()) {
+      setUserAddError('Email address cannot be empty.');
+      return;
+    }
+
+    if (onAddUser) {
+      const success = await onAddUser(newUserEmail.trim(), newUserPassword || undefined);
+      if (success) {
+        setUserAddSuccess('User account created successfully!');
+        addLog('Created User Account', `Registered new user account: ${newUserEmail.trim()}`, 'success');
+        setNewUserEmail('');
+        setNewUserPassword('');
+        setTimeout(() => {
+          setUserAddSuccess(null);
+        }, 3000);
+      } else {
+        setUserAddError('A user account with this email already exists.');
+      }
+    }
+  };
+
   // Export full registry backup as JSON file
   const handleExportBackup = () => {
     const backupData = {
@@ -379,11 +475,22 @@ export default function AdminPortal({
             <ShieldCheck className="w-6 h-6 text-emerald-400" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-md font-semibold tracking-tight text-stone-50">Master Administrator Backend</h2>
-              <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-sm animate-pulse">
-                Main Admin Active
-              </span>
+              <div className="flex gap-1.5 flex-wrap">
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-sm">
+                  Main Admin Active
+                </span>
+                {isLocalMode ? (
+                  <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-sm" title="Operating offline via local storage. No network requests are sent to your Supabase project.">
+                    ⚠️ Local Mock Mode
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold uppercase tracking-wider bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded-sm" title="Successfully connected to your active Supabase database.">
+                    ⚡ Supabase Mode (Live)
+                  </span>
+                )}
+              </div>
             </div>
             <p className="text-stone-400 text-xs mt-0.5 font-medium">
               Signed in: <span className="text-stone-200 underline font-semibold">{userEmail}</span>
@@ -459,6 +566,16 @@ export default function AdminPortal({
           }`}
         >
           Category Lookup Table
+        </button>
+        <button
+          onClick={() => setAdminTab('users')}
+          className={`px-4 py-2.5 font-bold text-xs uppercase tracking-wider border-b-2 transition-colors ${
+            adminTab === 'users' 
+              ? 'border-stone-950 text-stone-950' 
+              : 'border-transparent text-stone-500 hover:text-stone-900'
+          }`}
+        >
+          User Accounts
         </button>
         <button
           onClick={() => setAdminTab('audit')}
@@ -830,6 +947,188 @@ export default function AdminPortal({
         </div>
       )}
 
+      {adminTab === 'users' && (
+        <div className="grid md:grid-cols-3 gap-8 animate-in fade-in duration-200" id="user-accounts-manager">
+          
+          {/* Add New User form */}
+          <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs h-fit space-y-4">
+            <h3 className="font-semibold text-stone-950 text-sm flex items-center gap-2 pb-2 border-b border-stone-100">
+              <UserPlus className="w-4.5 h-4.5 text-stone-600" />
+              Register New User Account
+            </h3>
+
+            {userAddError && (
+              <div className="p-2.5 bg-red-50 border border-red-100 rounded-lg text-red-700 text-xs flex gap-2 items-start">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{userAddError}</span>
+              </div>
+            )}
+
+            {userAddSuccess && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-850 text-xs flex gap-2 items-start">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{userAddSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAddUserSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-600 block">User Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="owner@example.mu"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-600 block">Initial Password</label>
+                <input
+                  type="text"
+                  placeholder="Temporary password"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-855 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
+                />
+                <span className="text-[10px] text-stone-400 block leading-normal">
+                  If left blank, a default temporary secure password will be assigned.
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 bg-stone-900 hover:bg-stone-850 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create User Account</span>
+              </button>
+            </form>
+          </div>
+
+          {/* User Accounts list */}
+          <div className="md:col-span-2 bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-100">
+              <h3 className="font-semibold text-stone-950 text-sm flex items-center gap-2">
+                <Users className="w-4.5 h-4.5 text-stone-600" />
+                Registered Registry Users ({users.length})
+              </h3>
+              
+              <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg px-2 py-1 text-[11px]">
+                <Search className="w-3.5 h-3.5 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Search by email..."
+                  value={usersSearchQuery}
+                  onChange={(e) => setUsersSearchQuery(e.target.value)}
+                  className="bg-transparent focus:outline-none text-[11px] w-36 text-stone-800"
+                />
+              </div>
+            </div>
+
+            <div className="bg-stone-50 border border-stone-200 rounded-xl p-3.5 space-y-1.5 text-xs text-stone-600">
+              <span className="font-bold text-stone-900 block flex items-center gap-1.5 text-[11px]">
+                <Info className="w-3.5 h-3.5 text-stone-600 shrink-0" />
+                Registry Architecture Diagnostics & Syncing
+              </span>
+              <p className="leading-relaxed text-[11px]">
+                {isLocalMode ? (
+                  <>
+                    <strong>Local Fallback Mode is currently Active:</strong> Since the environment keys (<code>VITE_SUPABASE_URL</code>) are not configured at build/hosting time, user accounts are securely simulated entirely inside your web browser's <code>localStorage</code>. Any users registered here will not appear in your live Supabase Dashboard.
+                  </>
+                ) : (
+                  <>
+                    <strong>Live Supabase Mode is active:</strong> Users are loaded directly from the <code>public.profiles</code> database table. If users are registered in your Supabase Auth dashboard but do not show up in this panel, ensure you have disabled Row Level Security (RLS) on the <code>profiles</code> table or added an RLS policy that grants select access to authenticated admins.
+                  </>
+                )}
+              </p>
+            </div>
+
+            <div className="overflow-x-auto border border-stone-150/80 rounded-xl">
+              <table className="w-full text-left text-xs divide-y divide-stone-150">
+                <thead className="bg-stone-50 text-stone-500 uppercase tracking-wider text-[10px] font-bold">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">User Email / Account ID</th>
+                    <th className="px-4 py-3 font-semibold">Security Credential</th>
+                    <th className="px-4 py-3 font-semibold text-center">Status</th>
+                    <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 font-medium text-stone-700">
+                  {users
+                    .filter(u => u.email.toLowerCase().includes(usersSearchQuery.toLowerCase()))
+                    .map(user => (
+                      <tr key={user.id} className="hover:bg-stone-50/50 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="space-y-0.5">
+                            <span className="font-bold text-stone-900 block truncate max-w-[200px]" title={user.email}>
+                              {user.email}
+                            </span>
+                            <span className="text-[9px] text-stone-400 block font-mono uppercase truncate max-w-[150px]">
+                              {user.id}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[11px] text-stone-600">
+                          {user.email === 'hello.bhagavati@gmail.com' ? (
+                            <span className="text-stone-400 italic font-sans text-xs">Master Locked</span>
+                          ) : user.password ? (
+                            <span className="bg-stone-100 px-1.5 py-0.5 rounded text-stone-700 border border-stone-200">
+                              {user.password}
+                            </span>
+                          ) : (
+                            <span className="text-stone-400 italic font-sans text-xs">Supabase Auth Managed</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-block text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                            user.email === 'hello.bhagavati@gmail.com'
+                              ? 'bg-amber-50 text-amber-700 border-amber-150'
+                              : 'bg-stone-100 text-stone-750 border-stone-200'
+                          }`}>
+                            {user.email === 'hello.bhagavati@gmail.com' ? 'Master Admin' : 'Business Owner'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setEditingUser(user);
+                                setUserEditEmail(user.email);
+                                setUserEditPassword(user.password || '');
+                                setUserEditSuccess(null);
+                                setUserEditError(null);
+                              }}
+                              className="p-1.5 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded text-stone-700"
+                              title="Edit User Profile"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUserClick(user)}
+                              disabled={user.email === 'hello.bhagavati@gmail.com'}
+                              className={`p-1.5 rounded border ${
+                                user.email === 'hello.bhagavati@gmail.com'
+                                  ? 'bg-stone-50 text-stone-300 border-stone-100 cursor-not-allowed'
+                                  : 'bg-red-50 hover:bg-red-100 border-red-200 text-red-650'
+                              }`}
+                              title="Delete User and Listings"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {adminTab === 'settings' && (
         <div className="max-w-md mx-auto bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-6 animate-in fade-in duration-200" id="admin-security-settings">
           <div className="border-b border-stone-100 pb-3 flex items-center gap-2">
@@ -1031,6 +1330,80 @@ export default function AdminPortal({
               >
                 <Check className="w-4 h-4" />
                 <span>Commit Database Changes</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Inline User Editor Popup Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-xl max-w-md w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-stone-900 text-white p-4 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Edit className="w-4 h-4 text-stone-300" />
+                <h4 className="font-bold text-xs uppercase tracking-wider">Update User Account</h4>
+              </div>
+              <button 
+                onClick={() => setEditingUser(null)} 
+                className="text-stone-400 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleEditUserSubmit} className="p-5 space-y-4 text-xs">
+              {userEditError && (
+                <div className="p-2.5 bg-red-50 border border-red-150 rounded-lg text-red-700 text-xs flex gap-2 items-start">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="font-medium leading-relaxed">{userEditError}</span>
+                </div>
+              )}
+
+              {userEditSuccess && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 font-semibold text-center animate-pulse">
+                  {userEditSuccess}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="font-semibold text-stone-600 block">User Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={userEditEmail}
+                  onChange={(e) => setUserEditEmail(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-stone-600 block">
+                  Update Password {editingUser.password ? '' : '(Optional/Simulated)'}
+                </label>
+                <input
+                  type="text"
+                  placeholder={editingUser.password ? "Enter new password" : "Supabase managed credential"}
+                  value={userEditPassword}
+                  onChange={(e) => setUserEditPassword(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-2 text-stone-850 focus:outline-none focus:bg-white"
+                />
+                {!editingUser.password && (
+                  <span className="text-[10px] text-stone-400 block leading-normal mt-1">
+                    Note: Since this user is managed by Supabase Authentication, direct password updates represent administrative registry simulation.
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 bg-stone-900 hover:bg-stone-850 text-white font-bold rounded-lg transition-colors mt-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>Save User Modifications</span>
               </button>
             </form>
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Business, Category, MAURITIUS_DISTRICTS, Profile } from './types';
+import { Business, Category, MAURITIUS_DISTRICTS, Profile, UserAccount } from './types';
 import { 
   isSupabaseConfigured, 
   supabase 
@@ -87,18 +87,103 @@ export default function App() {
               setIsAdmin(profile.is_admin);
             }
           }
+
+          // 4. Fetch profiles/users
+          await loadSupabaseUsers();
         } catch (e) {
           console.log('Synchronizing active data state');
           setIsLocalMode(true);
           loadLocalData();
+          loadLocalUsers();
         }
       } else {
         loadLocalData();
+        loadLocalUsers();
       }
     }
 
     initData();
   }, [isLocalMode]);
+
+  // Registered user accounts state
+  const [users, setUsers] = useState<UserAccount[]>([]);
+
+  // Load local users fallback
+  const loadLocalUsers = () => {
+    const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';
+    let storedUsers: Record<string, string> = {};
+    try {
+      storedUsers = JSON.parse(storedUsersRaw);
+    } catch (e) {
+      storedUsers = {};
+    }
+    
+    const adminPass = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
+    const userList: UserAccount[] = [];
+    
+    // Add master admin account
+    userList.push({
+      id: 'admin-id-hello-bhagavati',
+      email: 'hello.bhagavati@gmail.com',
+      is_admin: true,
+      password: adminPass,
+      created_at: new Date('2026-01-01').toISOString()
+    });
+
+    // Add other registered users from local state
+    Object.entries(storedUsers).forEach(([email, pwd]) => {
+      if (email !== 'hello.bhagavati@gmail.com') {
+        userList.push({
+          id: `local-user-${email}`,
+          email: email,
+          is_admin: false,
+          password: pwd,
+          created_at: new Date('2026-06-15').toISOString()
+        });
+      }
+    });
+
+    setUsers(userList);
+  };
+
+  // Load users from Supabase with fallback to local storage
+  const loadSupabaseUsers = async () => {
+    if (!supabase) {
+      loadLocalUsers();
+      return;
+    }
+    try {
+      const { data: profiles, error } = await supabase
+        .from('profiles')
+        .select('*');
+      
+      if (error) throw error;
+
+      const userList: UserAccount[] = (profiles || []).map((p: any) => ({
+        id: p.id,
+        email: p.email || '',
+        is_admin: !!p.is_admin,
+        created_at: p.created_at || new Date().toISOString()
+      }));
+
+      // Force hello.bhagavati@gmail.com to exist in local/state list
+      if (!userList.some(u => u.email === 'hello.bhagavati@gmail.com')) {
+        const adminPass = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
+        userList.unshift({
+          id: 'admin-id-hello-bhagavati',
+          email: 'hello.bhagavati@gmail.com',
+          is_admin: true,
+          password: adminPass,
+          created_at: new Date('2026-01-01').toISOString()
+        });
+      }
+
+      setUsers(userList);
+    } catch (err) {
+      console.error('profiles fetch failed, falling back to local users state', err);
+      loadLocalUsers();
+    }
+  };
 
   // Load from local storage fallback
   const loadLocalData = () => {
@@ -541,6 +626,146 @@ export default function App() {
     }
   };
 
+  const handleUpdateUser = async (userId: string, newEmail: string, newPassword?: string): Promise<boolean> => {
+    const emailLower = newEmail.trim().toLowerCase();
+    const oldUser = users.find(u => u.id === userId);
+    if (!oldUser) return false;
+    const oldEmail = oldUser.email;
+
+    if (!isLocalMode && supabase) {
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ email: emailLower })
+          .eq('id', userId);
+        
+        if (error) throw error;
+        await loadSupabaseUsers();
+        return true;
+      } catch (err) {
+        console.error('Supabase profile update failed, applying simulated update', err);
+      }
+    }
+
+    const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';
+    let storedUsers: Record<string, string> = {};
+    try {
+      storedUsers = JSON.parse(storedUsersRaw);
+    } catch (e) {
+      storedUsers = {};
+    }
+
+    const password = newPassword || storedUsers[oldEmail] || 'TemporarySecurePassword123!';
+    delete storedUsers[oldEmail];
+    storedUsers[emailLower] = password;
+
+    localStorage.setItem('mauritius_directory_mock_users', JSON.stringify(storedUsers));
+
+    if (emailLower === 'hello.bhagavati@gmail.com' && newPassword) {
+      handleUpdateAdminPassword(newPassword);
+    }
+
+    const updatedListings = businesses.map(b => b.user_id === oldEmail ? { ...b, user_id: emailLower } : b);
+    setBusinesses(updatedListings);
+    saveLocalBusinesses(updatedListings);
+
+    loadLocalUsers();
+    return true;
+  };
+
+  const handleDeleteUser = async (userId: string): Promise<boolean> => {
+    const userToDelete = users.find(u => u.id === userId);
+    if (!userToDelete) return false;
+    const userEmailToDelete = userToDelete.email;
+
+    if (userEmailToDelete === 'hello.bhagavati@gmail.com') {
+      return false;
+    }
+
+    if (!isLocalMode && supabase) {
+      try {
+        const { error: profileErr } = await supabase
+          .from('profiles')
+          .delete()
+          .eq('id', userId);
+        
+        const { error: listingsErr } = await supabase
+          .from('listings')
+          .delete()
+          .eq('user_id', userId);
+
+        await loadSupabaseUsers();
+        
+        const { data: newListings } = await supabase
+          .from('listings')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (newListings) setBusinesses(newListings);
+
+        return true;
+      } catch (err) {
+        console.error('Supabase profile deletion failed, applying simulated deletion', err);
+      }
+    }
+
+    const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';
+    let storedUsers: Record<string, string> = {};
+    try {
+      storedUsers = JSON.parse(storedUsersRaw);
+    } catch (e) {
+      storedUsers = {};
+    }
+
+    delete storedUsers[userEmailToDelete];
+    localStorage.setItem('mauritius_directory_mock_users', JSON.stringify(storedUsers));
+
+    const updatedListings = businesses.filter(b => b.user_id !== userEmailToDelete);
+    setBusinesses(updatedListings);
+    saveLocalBusinesses(updatedListings);
+
+    loadLocalUsers();
+    return true;
+  };
+
+  const handleAddUser = async (email: string, password?: string): Promise<boolean> => {
+    const emailLower = email.trim().toLowerCase();
+    
+    if (!isLocalMode && supabase) {
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .insert({
+            email: emailLower,
+            is_admin: false,
+            created_at: new Date().toISOString()
+          });
+        
+        await loadSupabaseUsers();
+        return true;
+      } catch (err) {
+        console.error('Failed to register user in Supabase profiles', err);
+      }
+    }
+
+    const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';
+    let storedUsers: Record<string, string> = {};
+    try {
+      storedUsers = JSON.parse(storedUsersRaw);
+    } catch (e) {
+      storedUsers = {};
+    }
+
+    if (storedUsers[emailLower]) {
+      return false;
+    }
+
+    storedUsers[emailLower] = password || 'TemporarySecurePassword123!';
+    localStorage.setItem('mauritius_directory_mock_users', JSON.stringify(storedUsers));
+
+    loadLocalUsers();
+    return true;
+  };
+
   // Determine if the private Moderator Admin tab should be visible in the header
   const showAdminTab = 
     userEmail === 'hello.bhagavati@gmail.com' || 
@@ -644,6 +869,10 @@ export default function App() {
             isLocalMode={isLocalMode}
             isAdmin={isAdmin}
             userEmail={userEmail}
+            users={users}
+            onUpdateUser={handleUpdateUser}
+            onDeleteUser={handleDeleteUser}
+            onAddUser={handleAddUser}
             onApproveListing={handleApproveListing}
             onRejectListing={handleRejectListing}
             onAddCategory={handleAddCategory}

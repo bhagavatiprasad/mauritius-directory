@@ -29,6 +29,14 @@ export interface Profile {
   email?: string;
 }
 
+export interface UserAccount {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  created_at?: string;
+  password?: string;
+}
+
 export const MAURITIUS_DISTRICTS = [
   'Port Louis',
   'Plaines Wilhems',

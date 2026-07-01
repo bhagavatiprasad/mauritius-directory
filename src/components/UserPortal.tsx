@@ -416,6 +416,17 @@ export default function UserPortal({
                 ? 'Register your Mauritian business account to create and manage your directory listing.' 
                 : 'Log in to securely manage your business directory listings.'}
             </p>
+            <div className="pt-1 flex justify-center">
+              {isLocalMode ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-850 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full" title="No environment keys found. Using standard client-side storage simulation.">
+                  ⚠️ Local Storage Mode Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-150 px-2 py-0.5 rounded-full" title="Connected to active Supabase database.">
+                  ⚡ Supabase Connected (Live)
+                </span>
+              )}
+            </div>
           </div>
 
           {authError && (
