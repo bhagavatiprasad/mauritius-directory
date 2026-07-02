@@ -355,7 +355,8 @@ export default function App() {
           if (error) throw error;
 
           if (data?.user) {
-            // Explicitly sync the newly signed up user with the public.profiles database table
+            // Note: This client-side insert is a backup/fallback. A database trigger (handle_new_user) 
+            // on your Supabase backend auto-generates the profile row whenever a new auth user is registered.
             const { error: profileError } = await supabase
               .from('profiles')
               .insert({
@@ -380,7 +381,9 @@ export default function App() {
             setSession(data.session);
             setUserEmail(data.session.user.email || '');
             
-            // Self-healing: Upsert profile row to make sure it exists and contains their email
+            // Self-healing fallback: Upsert profile row to guarantee it exists and contains their email.
+            // Note: This is secondary backup/redundancy. The primary profile record is generated 
+            // automatically on auth signup by a Supabase Postgres DB trigger (handle_new_user).
             try {
               await supabase
                 .from('profiles')
