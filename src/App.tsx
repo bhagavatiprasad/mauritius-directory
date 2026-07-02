@@ -14,6 +14,7 @@ import {
 import DirectoryPortal from './components/DirectoryPortal';
 import UserPortal from './components/UserPortal';
 import AdminPortal from './components/AdminPortal';
+import ServicesPortal from './components/ServicesPortal';
 
 import { 
   Building2, 
@@ -24,12 +25,13 @@ import {
   Database,
   CloudLightning,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  LayoutGrid
 } from 'lucide-react';
 
 export default function App() {
   // Navigation Routing Tab state
-  const [activeTab, setActiveTab] = useState<'directory' | 'owner' | 'admin'>('directory');
+  const [activeTab, setActiveTab] = useState<'directory' | 'owner' | 'admin' | 'services'>('directory');
 
   // Business state & Category lists
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -1236,6 +1238,17 @@ export default function App() {
               <User className="w-3.5 h-3.5" />
               <span>Business Owner</span>
             </button>
+            <button
+              onClick={() => setActiveTab('services')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                activeTab === 'services' 
+                  ? 'bg-stone-950 text-white' 
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/50'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500/20" />
+              <span>Services</span>
+            </button>
             {showAdminTab && (
               <button
                 onClick={() => setActiveTab('admin')}
@@ -1278,6 +1291,13 @@ export default function App() {
             onSaveListing={handleSaveListing}
             onDeleteListingImage={handleDeleteListingImage}
             onDeleteListing={handleDeleteListing}
+          />
+        )}
+
+        {activeTab === 'services' && (
+          <ServicesPortal 
+            userEmail={userEmail}
+            isLocalMode={isLocalMode}
           />
         )}
 
