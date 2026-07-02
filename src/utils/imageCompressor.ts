@@ -89,14 +89,19 @@ export async function compressAndValidateImage(file: File): Promise<CompressionR
                   lastModified: Date.now(),
                 });
 
-                resolve({
-                  success: compressedSizeKB <= 200,
-                  file: compressedFile,
-                  originalSizeKB,
-                  compressedSizeKB: Math.round(compressedSizeKB),
-                  previewUrl: URL.createObjectURL(blob),
-                  error: compressedSizeKB > 200 ? `Image is too complex to fit under 200KB. Try a smaller or simpler image.` : undefined
-                });
+                const reader2 = new FileReader();
+                reader2.onloadend = () => {
+                  const base64data = reader2.result as string;
+                  resolve({
+                    success: compressedSizeKB <= 200,
+                    file: compressedFile,
+                    originalSizeKB,
+                    compressedSizeKB: Math.round(compressedSizeKB),
+                    previewUrl: base64data,
+                    error: compressedSizeKB > 200 ? `Image is too complex to fit under 200KB. Try a smaller or simpler image.` : undefined
+                  });
+                };
+                reader2.readAsDataURL(blob);
               } else {
                 // Reduce quality and/or scale down canvas dimensions if quality is already low
                 attempt++;

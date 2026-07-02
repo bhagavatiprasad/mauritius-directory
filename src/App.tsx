@@ -353,6 +353,21 @@ export default function App() {
             }
           });
           if (error) throw error;
+
+          if (data?.user) {
+            // Explicitly sync the newly signed up user with the public.profiles database table
+            const { error: profileError } = await supabase
+              .from('profiles')
+              .insert({
+                id: data.user.id,
+                email: emailLower,
+                is_admin: emailLower === 'hello.bhagavati@gmail.com',
+                created_at: new Date().toISOString()
+              });
+            if (profileError) {
+              console.error('Profile creation error during signup sync:', profileError);
+            }
+          }
           return { success: true };
         } else {
           const { data, error } = await supabase.auth.signInWithPassword({
@@ -365,6 +380,19 @@ export default function App() {
             setSession(data.session);
             setUserEmail(data.session.user.email || '');
             
+            // Self-healing: Upsert profile row to make sure it exists and contains their email
+            try {
+              await supabase
+                .from('profiles')
+                .upsert({
+                  id: data.session.user.id,
+                  email: emailLower,
+                  is_admin: emailLower === 'hello.bhagavati@gmail.com'
+                }, { onConflict: 'id' });
+            } catch (upsertErr) {
+              console.error('Profile self-healing upsert failed:', upsertErr);
+            }
+
             const { data: profile } = await supabase
               .from('profiles')
               .select('is_admin')
@@ -482,7 +510,16 @@ export default function App() {
     if (!isLocalMode && supabase && session?.user) {
       try {
         if (listingData.id) {
-          // Update
+          // Update - Check security ownership/auth
+          const existingListing = businesses.find(b => b.id === listingData.id);
+          if (existingListing) {
+            const isOwner = existingListing.user_id === session.user.id || 
+                            existingListing.user_id?.toLowerCase() === userEmail.toLowerCase();
+            if (!isOwner && !isAdmin) {
+              return { success: false, error: 'Unauthorized: You do not have permission to modify this listing.' };
+            }
+          }
+
           const { error } = await supabase
             .from('listings')
             .update({
@@ -560,6 +597,18 @@ export default function App() {
     } else {
       // Local Mode listing saving
       const updatedList = [...businesses];
+
+      // Ownership and admin validation for edit in local mode
+      if (listingData.id) {
+        const existingListing = updatedList.find(b => b.id === listingData.id);
+        if (existingListing) {
+          const isOwner = existingListing.user_id?.toLowerCase() === userEmail?.toLowerCase();
+          if (!isOwner && !isAdmin) {
+            return { success: false, error: 'Unauthorized: You do not have permission to modify this listing.' };
+          }
+        }
+      }
+      
       const userListings = updatedList.filter(b => b.user_id === userEmail);
 
       // Check limits if inserting a new listing
@@ -623,6 +672,17 @@ export default function App() {
 
   // Delete Listing Image Action
   const handleDeleteListingImage = async (listingId: string): Promise<boolean> => {
+    const existingListing = businesses.find(b => b.id === listingId);
+    if (!existingListing) return false;
+    const isOwner = !isLocalMode && session?.user
+      ? (existingListing.user_id === session.user.id || existingListing.user_id?.toLowerCase() === userEmail?.toLowerCase())
+      : (existingListing.user_id?.toLowerCase() === userEmail?.toLowerCase());
+    
+    if (!isOwner && !isAdmin) {
+      console.error('Unauthorized image delete attempt');
+      return false;
+    }
+
     if (!isLocalMode && supabase) {
       try {
         const { error } = await supabase
@@ -646,6 +706,11 @@ export default function App() {
 
   // Administrator Actions
   const handleApproveListing = async (id: string) => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can approve listings.');
+      return;
+    }
+
     if (!isLocalMode && supabase) {
       const { error } = await supabase
         .from('listings')
@@ -666,6 +731,11 @@ export default function App() {
   };
 
   const handleRejectListing = async (id: string) => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can reject listings.');
+      return;
+    }
+
     if (!isLocalMode && supabase) {
       const { error } = await supabase
         .from('listings')
@@ -686,6 +756,17 @@ export default function App() {
   };
 
   const handleDeleteListing = async (id: string) => {
+    const existingListing = businesses.find(b => b.id === id);
+    if (!existingListing) return;
+    const isOwner = !isLocalMode && session?.user
+      ? (existingListing.user_id === session.user.id || existingListing.user_id?.toLowerCase() === userEmail?.toLowerCase())
+      : (existingListing.user_id?.toLowerCase() === userEmail?.toLowerCase());
+
+    if (!isOwner && !isAdmin) {
+      alert('Unauthorized: You do not have permission to delete this listing.');
+      return;
+    }
+
     if (!isLocalMode && supabase) {
       try {
         const { error } = await supabase
@@ -711,6 +792,10 @@ export default function App() {
   };
 
   const handleToggleFeaturedListing = async (id: string) => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can feature listings.');
+      return;
+    }
     const listing = businesses.find(b => b.id === id);
     if (!listing) return;
     const nextFeatured = !listing.featured;
@@ -740,6 +825,10 @@ export default function App() {
   };
 
   const handleUpdateListingDetails = async (id: string, updatedFields: Partial<Business>) => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can modify listing details.');
+      return;
+    }
     if (!isLocalMode && supabase) {
       try {
         const { error } = await supabase
@@ -761,6 +850,10 @@ export default function App() {
   };
 
   const handleAddCategory = async (newCat: Omit<Category, 'archived'>): Promise<boolean> => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can add categories.');
+      return false;
+    }
     const fullCat: Category = { ...newCat, archived: false };
 
     if (!isLocalMode && supabase) {
@@ -788,6 +881,10 @@ export default function App() {
   };
 
   const handleArchiveCategory = async (id: string, archive: boolean) => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can archive categories.');
+      return;
+    }
     if (!isLocalMode && supabase) {
       const { error } = await supabase
         .from('categories')
@@ -805,6 +902,10 @@ export default function App() {
   };
 
   const handleUpdateUser = async (userId: string, newEmail: string, newPassword?: string, isAdminValue?: boolean): Promise<boolean> => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can update user accounts.');
+      return false;
+    }
     const emailLower = newEmail.trim().toLowerCase();
     const oldUser = users.find(u => u.id === userId);
     if (!oldUser) return false;
@@ -877,6 +978,10 @@ export default function App() {
   };
 
   const handleDeleteUser = async (userId: string): Promise<boolean> => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can delete user accounts.');
+      return false;
+    }
     const userToDelete = users.find(u => u.id === userId);
     if (!userToDelete) return false;
     const userEmailToDelete = userToDelete.email;
@@ -931,17 +1036,46 @@ export default function App() {
   };
 
   const handleAddUser = async (email: string, password?: string): Promise<boolean> => {
+    if (!isAdmin) {
+      alert('Unauthorized: Only administrators can add new user accounts.');
+      return false;
+    }
     const emailLower = email.trim().toLowerCase();
+    const finalPassword = password || 'TemporarySecurePassword123!';
     
     if (!isLocalMode && supabase) {
       try {
-        const { error } = await supabase
+        // 1. Sign up the user in Supabase Auth to create their official authentication credentials
+        const { data: authData, error: authErr } = await supabase.auth.signUp({
+          email: emailLower,
+          password: finalPassword,
+        });
+
+        if (authErr) {
+          console.error('Auth signup failed during admin add:', authErr);
+        }
+
+        const profileId = authData?.user?.id || `simulated-id-${Date.now()}`;
+
+        // 2. Insert into the public.profiles table so they are visible and queryable
+        const { error: profileErr } = await supabase
           .from('profiles')
           .insert({
+            id: profileId,
             email: emailLower,
             is_admin: false,
             created_at: new Date().toISOString()
           });
+        
+        if (profileErr) {
+          console.error('Profiles insert failed during admin add:', profileErr);
+          // Try to upsert in case of existing id
+          await supabase.from('profiles').upsert({
+            id: profileId,
+            email: emailLower,
+            is_admin: false
+          });
+        }
         
         await loadSupabaseUsers();
         return true;

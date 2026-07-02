@@ -148,6 +148,15 @@ export default function AdminPortal({
     return categories.find(c => c.id === catId)?.name || 'Local Business';
   };
 
+  const getUserEmailForListing = (listingUserId?: string) => {
+    if (!listingUserId) return 'Unknown Owner';
+    // If it's already an email address (like in local mode)
+    if (listingUserId.includes('@')) return listingUserId;
+    // Otherwise look it up in the users list
+    const foundUser = users.find(u => u.id === listingUserId);
+    return foundUser ? foundUser.email : `User (${listingUserId.slice(0, 8)})`;
+  };
+
   // Submit Admin authentication
   const handleAdminAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -631,9 +640,14 @@ export default function AdminPortal({
                         referrerPolicy="no-referrer"
                       />
                       <div className="space-y-1">
-                        <span className="inline-block bg-stone-100 text-stone-650 text-[9px] font-bold px-1.5 py-0.5 rounded border border-stone-200">
-                          {getCategoryName(biz.category_id)}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-block bg-stone-100 text-stone-650 text-[9px] font-bold px-1.5 py-0.5 rounded border border-stone-200">
+                            {getCategoryName(biz.category_id)}
+                          </span>
+                          <span className="inline-block bg-amber-50 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-200">
+                            By: {getUserEmailForListing(biz.user_id)}
+                          </span>
+                        </div>
                         <h4 className="font-bold text-stone-900 text-xs leading-tight">{biz.name}</h4>
                         <p className="text-[10px] text-stone-500 flex items-center gap-0.5">
                           <MapPin className="w-3 h-3 text-stone-400 shrink-0" />
@@ -741,9 +755,14 @@ export default function AdminPortal({
                                 referrerPolicy="no-referrer"
                               />
                               <div>
-                                <span className="text-[10px] font-bold text-stone-400 block uppercase leading-none mb-0.5">
-                                  {getCategoryName(biz.category_id)}
-                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                  <span className="text-[10px] font-bold text-stone-400 uppercase leading-none">
+                                    {getCategoryName(biz.category_id)}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-amber-750 bg-amber-50 border border-amber-150 px-1 rounded-sm">
+                                    {getUserEmailForListing(biz.user_id)}
+                                  </span>
+                                </div>
                                 <span className="font-bold text-stone-900 block leading-tight">{biz.name}</span>
                               </div>
                             </div>
