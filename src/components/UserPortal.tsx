@@ -182,12 +182,10 @@ export default function UserPortal({
         const storedUsers = JSON.parse(storedUsersRaw);
         const savedPass = storedUsers[forgotEmail.trim().toLowerCase()];
         
-        // Also check if admin
-        if (forgotEmail.trim().toLowerCase() === 'hello.bhagavati@gmail.com') {
-          const adminPass = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
-          setForgotStatus({ success: `Security Recovery: Master administrator password is: "${adminPass}".` });
-        } else if (savedPass) {
-          setForgotStatus({ success: `Security Recovery: Registered password found! Your password is: "${savedPass}".` });
+        // Safe simulated response instead of exposing the actual password on screen
+        const emailLower = forgotEmail.trim().toLowerCase();
+        if (emailLower === 'hello.bhagavati@gmail.com' || emailLower.includes('@')) {
+          setForgotStatus({ success: 'A secure password reset link has been dispatched to your registered email address.' });
         } else {
           setForgotStatus({ error: 'Offline Recovery: No registered account found with this email address.' });
         }

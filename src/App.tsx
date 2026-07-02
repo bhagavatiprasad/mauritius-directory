@@ -91,7 +91,7 @@ export default function App() {
           // 4. Fetch profiles/users
           await loadSupabaseUsers();
         } catch (e) {
-          console.log('Synchronizing active data state');
+          console.error('Supabase active data synchronization or query failed:', e);
           setIsLocalMode(true);
           loadLocalData();
           loadLocalUsers();
