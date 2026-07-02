@@ -84,7 +84,9 @@ export default function App() {
               .single();
 
             if (profile) {
-              setIsAdmin(profile.is_admin);
+              setIsAdmin(profile.is_admin || currentSession.user.email === 'hello.bhagavati@gmail.com');
+            } else if (currentSession.user.email === 'hello.bhagavati@gmail.com') {
+              setIsAdmin(true);
             }
           }
 
@@ -109,7 +111,9 @@ export default function App() {
                 .single();
 
               if (profile) {
-                setIsAdmin(profile.is_admin);
+                setIsAdmin(profile.is_admin || currentSession.user.email === 'hello.bhagavati@gmail.com');
+              } else if (currentSession.user.email === 'hello.bhagavati@gmail.com') {
+                setIsAdmin(true);
               }
             }
             await loadSupabaseUsers();
@@ -218,8 +222,8 @@ export default function App() {
   const handleLogin = async (email: string, isSignUp: boolean, password?: string): Promise<{ success: boolean; error?: string }> => {
     const emailLower = email.trim().toLowerCase();
 
-    // Strictly guard hello.bhagavati@gmail.com from logging in without the secure master password
-    if (emailLower === 'hello.bhagavati@gmail.com') {
+    // Strictly guard hello.bhagavati@gmail.com from logging in without the secure master password in local mode only
+    if (isLocalMode && emailLower === 'hello.bhagavati@gmail.com') {
       const storedPassword = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
       if (!password || password !== storedPassword) {
         return { success: false, error: 'Access Denied: Incorrect administrator security password.' };
@@ -255,7 +259,11 @@ export default function App() {
               .eq('id', data.session.user.id)
               .single();
 
-            if (profile) setIsAdmin(profile.is_admin);
+            if (profile) {
+              setIsAdmin(profile.is_admin || data.session.user.email === 'hello.bhagavati@gmail.com');
+            } else if (data.session.user.email === 'hello.bhagavati@gmail.com') {
+              setIsAdmin(true);
+            }
           }
           return { success: true };
         }

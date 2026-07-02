@@ -153,17 +153,19 @@ export default function AdminPortal({
     setAuthError(null);
     setAuthLoading(true);
 
-    if (adminEmailInput.trim() !== 'hello.bhagavati@gmail.com') {
-      setAuthError('Access Denied: hello.bhagavati@gmail.com is the single designated master admin.');
+    const emailTrimmed = adminEmailInput.trim().toLowerCase();
+
+    if (isLocalMode && emailTrimmed !== 'hello.bhagavati@gmail.com') {
+      setAuthError('Access Denied: hello.bhagavati@gmail.com is the single designated master admin in local offline mode.');
       setAuthLoading(false);
-      addLog('Authentication Blocked', `Failed access attempt from ${adminEmailInput}`, 'warn');
+      addLog('Authentication Blocked', `Failed access attempt from ${emailTrimmed}`, 'warn');
       return;
     }
 
-    const res = await onLogin(adminEmailInput.trim(), false, adminPasswordInput);
+    const res = await onLogin(emailTrimmed, false, adminPasswordInput);
     setAuthLoading(false);
     if (res.success) {
-      addLog('Admin Login Successful', 'hello.bhagavati@gmail.com authenticated as directory administrator.', 'success');
+      addLog('Admin Login Successful', `${emailTrimmed} authenticated as directory administrator.`, 'success');
     } else {
       setAuthError(res.error || 'Authentication error. Please retry.');
     }
@@ -402,8 +404,8 @@ export default function AdminPortal({
     return matchesSearch && matchesStatus && matchesDistrict;
   });
 
-  // If not authenticated as hello.bhagavati@gmail.com, show secure master auth form
-  if (!isAdmin || userEmail !== 'hello.bhagavati@gmail.com') {
+  // If not authenticated as an administrator, show secure master auth form
+  if (!isAdmin) {
     return (
       <div className="max-w-md mx-auto my-12" id="admin-gate-screen">
         <div className="bg-white rounded-2xl border border-stone-200/80 shadow-md overflow-hidden">
@@ -412,7 +414,7 @@ export default function AdminPortal({
             <div className="w-12 h-12 bg-stone-800 border border-stone-700 text-stone-300 rounded-xl flex items-center justify-center mx-auto">
               <Lock className="w-5 h-5 text-amber-400" />
             </div>
-            <h2 className="text-lg font-semibold tracking-tight text-stone-50">Master Administrator Authentication</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-stone-50">Administrator Authentication</h2>
             <p className="text-stone-400 text-xs max-w-xs mx-auto leading-relaxed">
               Private system console reserved for verified directory moderators.
             </p>
@@ -431,7 +433,7 @@ export default function AdminPortal({
               <label className="text-xs font-semibold text-stone-600 block">Administrator Email</label>
               <input
                 type="email"
-                placeholder="hello.bhagavati@gmail.com"
+                placeholder="e.g. admin@directory.mu"
                 required
                 value={adminEmailInput}
                 onChange={(e) => setAdminEmailInput(e.target.value)}
@@ -449,7 +451,11 @@ export default function AdminPortal({
                 onChange={(e) => setAdminPasswordInput(e.target.value)}
                 className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2.5 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
               />
-              <span className="text-[10px] text-stone-400 block font-medium">Any security password accepted for hello.bhagavati@gmail.com in preview mode.</span>
+              <span className="text-[10px] text-stone-400 block font-medium">
+                {isLocalMode 
+                  ? "Enter the administrator security password." 
+                  : "Enter your registered Supabase administrator password."}
+              </span>
             </div>
 
             <button
