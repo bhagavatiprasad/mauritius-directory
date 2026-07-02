@@ -34,6 +34,7 @@ interface UserPortalProps {
   categories: Category[];
   isLocalMode: boolean;
   userEmail: string | null;
+  userId?: string | null;
   onLogin: (email: string, isSignUp: boolean, password?: string) => Promise<{ success: boolean; error?: string }>;
   onLogout: () => void;
   onSaveListing: (listingData: Omit<Business, 'id' | 'user_id' | 'status'> & { id?: string }) => Promise<{ success: boolean; error?: string }>;
@@ -46,6 +47,7 @@ export default function UserPortal({
   categories,
   isLocalMode,
   userEmail,
+  userId,
   onLogin,
   onLogout,
   onSaveListing,
@@ -129,9 +131,15 @@ export default function UserPortal({
   }, [editingListing, categories]);
 
   // Filter listings owned by this user
-  const myListings = businesses.filter(b => 
-    userEmail && b.user_id && b.user_id.toLowerCase() === userEmail.toLowerCase()
-  );
+  const myListings = businesses.filter(b => {
+    if (!userEmail) return false;
+    if (!b.user_id) return false;
+    
+    const matchesEmail = b.user_id.toLowerCase() === userEmail.toLowerCase();
+    const matchesId = userId && b.user_id === userId;
+    
+    return matchesEmail || matchesId;
+  });
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

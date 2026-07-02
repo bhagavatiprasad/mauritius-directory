@@ -1057,6 +1057,7 @@ export default function App() {
             categories={categories}
             isLocalMode={isLocalMode}
             userEmail={userEmail}
+            userId={session?.user?.id}
             onLogin={handleLogin}
             onLogout={handleLogout}
             onSaveListing={handleSaveListing}
