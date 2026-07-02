@@ -1,0 +1,6 @@
+{
+  "name": "Mauritius Business Directory",
+  "description": "A highly polished, fast Local Business Directory for Mauritius featuring category search, district filtering, user auth, and business listings management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
