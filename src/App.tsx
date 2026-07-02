@@ -144,6 +144,14 @@ export default function App() {
       storedUsers = {};
     }
     
+    const localAdminsRaw = localStorage.getItem('mauritius_directory_local_admins') || '["hello.bhagavati@gmail.com"]';
+    let localAdmins: string[] = [];
+    try {
+      localAdmins = JSON.parse(localAdminsRaw);
+    } catch {
+      localAdmins = ["hello.bhagavati@gmail.com"];
+    }
+
     const adminPass = localStorage.getItem('mauritius_directory_admin_password') || 'MauritiusGold2026!';
     const userList: UserAccount[] = [];
     
@@ -162,7 +170,7 @@ export default function App() {
         userList.push({
           id: `local-user-${email}`,
           email: email,
-          is_admin: false,
+          is_admin: localAdmins.includes(email),
           password: pwd,
           created_at: new Date('2026-06-15').toISOString()
         });
@@ -268,7 +276,27 @@ export default function App() {
           return { success: true };
         }
       } catch (err: any) {
-        return { success: false, error: err.message };
+        console.error('Authentication Error:', err);
+        let msg = 'Authentication failed. Please check credentials.';
+        if (err) {
+          if (typeof err === 'string') {
+            msg = err;
+          } else if (err.message) {
+            msg = err.message;
+          } else if (err.error_description) {
+            msg = err.error_description;
+          } else if (err.error && typeof err.error === 'string') {
+            msg = err.error;
+          } else if (err.error && err.error.message) {
+            msg = err.error.message;
+          } else {
+            msg = JSON.stringify(err);
+            if (msg === '{}') {
+              msg = err.statusText || err.name || 'Authentication request failed.';
+            }
+          }
+        }
+        return { success: false, error: msg };
       }
     } else {
       // Local fallback mode authentication
@@ -520,7 +548,10 @@ export default function App() {
         .update({ status: 'approved' })
         .eq('id', id);
       
-      if (!error) {
+      if (error) {
+        console.error('Failed to approve listing:', error);
+        alert(`Database Error: Could not approve listing. Details: ${error.message}`);
+      } else {
         setBusinesses(businesses.map(b => b.id === id ? { ...b, status: 'approved' } : b));
       }
     } else {
@@ -537,7 +568,10 @@ export default function App() {
         .update({ status: 'rejected' })
         .eq('id', id);
       
-      if (!error) {
+      if (error) {
+        console.error('Failed to reject listing:', error);
+        alert(`Database Error: Could not reject listing. Details: ${error.message}`);
+      } else {
         setBusinesses(businesses.map(b => b.id === id ? { ...b, status: 'rejected' } : b));
       }
     } else {
@@ -555,11 +589,15 @@ export default function App() {
           .delete()
           .eq('id', id);
         
-        if (!error) {
+        if (error) {
+          console.error('Failed to delete listing:', error);
+          alert(`Database Error: Could not delete listing. Details: ${error.message}`);
+        } else {
           setBusinesses(businesses.filter(b => b.id !== id));
         }
-      } catch (err) {
-        setBusinesses(businesses.filter(b => b.id !== id));
+      } catch (err: any) {
+        console.error('Delete error exception:', err);
+        alert(`Error: ${err.message || 'Failed to communicate with database.'}`);
       }
     } else {
       const updated = businesses.filter(b => b.id !== id);
@@ -580,9 +618,15 @@ export default function App() {
           .update({ featured: nextFeatured })
           .eq('id', id);
         
-        setBusinesses(businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b));
-      } catch (err) {
-        setBusinesses(businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b));
+        if (error) {
+          console.error('Failed to toggle featured state:', error);
+          alert(`Database Error: Could not change featured state. Details: ${error.message}`);
+        } else {
+          setBusinesses(businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b));
+        }
+      } catch (err: any) {
+        console.error('Toggle featured exception:', err);
+        alert(`Error: ${err.message || 'Failed to update featured state.'}`);
       }
     } else {
       const updated = businesses.map(b => b.id === id ? { ...b, featured: nextFeatured } : b);
@@ -656,17 +700,21 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (userId: string, newEmail: string, newPassword?: string): Promise<boolean> => {
+  const handleUpdateUser = async (userId: string, newEmail: string, newPassword?: string, isAdminValue?: boolean): Promise<boolean> => {
     const emailLower = newEmail.trim().toLowerCase();
     const oldUser = users.find(u => u.id === userId);
     if (!oldUser) return false;
     const oldEmail = oldUser.email;
+    const finalIsAdmin = isAdminValue !== undefined ? isAdminValue : oldUser.is_admin;
 
     if (!isLocalMode && supabase) {
       try {
         const { error } = await supabase
           .from('profiles')
-          .update({ email: emailLower })
+          .update({ 
+            email: emailLower,
+            is_admin: finalIsAdmin
+          })
           .eq('id', userId);
         
         if (error) throw error;
@@ -690,6 +738,27 @@ export default function App() {
     storedUsers[emailLower] = password;
 
     localStorage.setItem('mauritius_directory_mock_users', JSON.stringify(storedUsers));
+
+    const localAdminsRaw = localStorage.getItem('mauritius_directory_local_admins') || '["hello.bhagavati@gmail.com"]';
+    let localAdmins: string[] = [];
+    try {
+      localAdmins = JSON.parse(localAdminsRaw);
+    } catch {
+      localAdmins = ["hello.bhagavati@gmail.com"];
+    }
+
+    if (finalIsAdmin) {
+      if (!localAdmins.includes(emailLower)) {
+        localAdmins.push(emailLower);
+      }
+    } else {
+      localAdmins = localAdmins.filter(email => email !== emailLower);
+    }
+    // ensure hello.bhagavati@gmail.com is always admin
+    if (!localAdmins.includes('hello.bhagavati@gmail.com')) {
+      localAdmins.push('hello.bhagavati@gmail.com');
+    }
+    localStorage.setItem('mauritius_directory_local_admins', JSON.stringify(localAdmins));
 
     if (emailLower === 'hello.bhagavati@gmail.com' && newPassword) {
       handleUpdateAdminPassword(newPassword);

@@ -41,7 +41,7 @@ interface AdminPortalProps {
   isAdmin: boolean;
   userEmail: string | null;
   users?: UserAccount[];
-  onUpdateUser?: (userId: string, newEmail: string, newPassword?: string) => Promise<boolean>;
+  onUpdateUser?: (userId: string, newEmail: string, newPassword?: string, is_admin?: boolean) => Promise<boolean>;
   onDeleteUser?: (userId: string) => Promise<boolean>;
   onAddUser?: (email: string, password?: string) => Promise<boolean>;
   onApproveListing: (id: string) => void;
@@ -84,6 +84,7 @@ export default function AdminPortal({
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [userEditEmail, setUserEditEmail] = useState('');
   const [userEditPassword, setUserEditPassword] = useState('');
+  const [userEditIsAdmin, setUserEditIsAdmin] = useState(false);
   const [userEditSuccess, setUserEditSuccess] = useState<string | null>(null);
   const [userEditError, setUserEditError] = useState<string | null>(null);
 
@@ -309,7 +310,7 @@ export default function AdminPortal({
     }
 
     if (onUpdateUser) {
-      const success = await onUpdateUser(editingUser.id, userEditEmail.trim(), userEditPassword || undefined);
+      const success = await onUpdateUser(editingUser.id, userEditEmail.trim(), userEditPassword || undefined, userEditIsAdmin);
       if (success) {
         setUserEditSuccess('User account updated successfully!');
         addLog('Updated User Account', `Modified email/credentials for user: ${userEditEmail.trim()}`, 'info');
@@ -1090,6 +1091,7 @@ export default function AdminPortal({
                                 setEditingUser(user);
                                 setUserEditEmail(user.email);
                                 setUserEditPassword(user.password || '');
+                                setUserEditIsAdmin(user.is_admin);
                                 setUserEditSuccess(null);
                                 setUserEditError(null);
                               }}
@@ -1389,6 +1391,21 @@ export default function AdminPortal({
                   </span>
                 )}
               </div>
+
+              {editingUser.email !== 'hello.bhagavati@gmail.com' && (
+                <div className="pt-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="user-edit-is-admin-checkbox"
+                    checked={userEditIsAdmin}
+                    onChange={(e) => setUserEditIsAdmin(e.target.checked)}
+                    className="w-4 h-4 text-stone-900 border-stone-300 rounded focus:ring-stone-500"
+                  />
+                  <label htmlFor="user-edit-is-admin-checkbox" className="font-semibold text-stone-700 select-none cursor-pointer">
+                    Grant Administrator Privileges (Moderator Account)
+                  </label>
+                </div>
+              )}
 
               <button
                 type="submit"
