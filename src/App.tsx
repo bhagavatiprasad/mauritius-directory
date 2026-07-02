@@ -178,9 +178,13 @@ export default function App() {
 
           // 3. Check current Auth Session
           const { data: { session: currentSession } } = await supabase.auth.getSession();
+          let isUserAdmin = false;
+          let emailStr: string | null = null;
+
           if (currentSession?.user) {
             setSession(currentSession);
-            setUserEmail(currentSession.user.email || '');
+            emailStr = currentSession.user.email || '';
+            setUserEmail(emailStr);
 
             // Fetch profile
             const { data: profile } = await supabase
@@ -190,25 +194,33 @@ export default function App() {
               .single();
 
             if (profile) {
-              setIsAdmin(profile.is_admin || currentSession.user.email === 'hello.bhagavati@gmail.com');
+              isUserAdmin = profile.is_admin || currentSession.user.email === 'hello.bhagavati@gmail.com';
             } else if (currentSession.user.email === 'hello.bhagavati@gmail.com') {
-              setIsAdmin(true);
+              isUserAdmin = true;
             }
+            setIsAdmin(isUserAdmin);
           }
 
-          // 4. Fetch profiles/users
-          await loadSupabaseUsers();
+          // 4. Fetch profiles/users using current fresh local variables
+          if (isUserAdmin || emailStr === 'hello.bhagavati@gmail.com') {
+            await loadSupabaseUsers(emailStr || undefined, isUserAdmin);
+          } else {
+            loadLocalUsers();
+          }
         } catch (e) {
-          console.error('Supabase active data synchronization or query failed:', e);
+          console.warn('Supabase active data synchronization or query failed:', e);
           // Load default categories and listings as visually safe placeholders
           loadLocalData();
           
           // Try to recover session from Supabase even if database queries had errors
           try {
             const { data: { session: currentSession } } = await supabase.auth.getSession();
+            let isUserAdmin = false;
+            let emailStr: string | null = null;
             if (currentSession?.user) {
               setSession(currentSession);
-              setUserEmail(currentSession.user.email || '');
+              emailStr = currentSession.user.email || '';
+              setUserEmail(emailStr);
 
               const { data: profile } = await supabase
                 .from('profiles')
@@ -217,20 +229,43 @@ export default function App() {
                 .single();
 
               if (profile) {
-                setIsAdmin(profile.is_admin || currentSession.user.email === 'hello.bhagavati@gmail.com');
+                isUserAdmin = profile.is_admin || currentSession.user.email === 'hello.bhagavati@gmail.com';
               } else if (currentSession.user.email === 'hello.bhagavati@gmail.com') {
-                setIsAdmin(true);
+                isUserAdmin = true;
               }
+              setIsAdmin(isUserAdmin);
             }
-            await loadSupabaseUsers();
+            if (isUserAdmin || emailStr === 'hello.bhagavati@gmail.com') {
+              await loadSupabaseUsers(emailStr || undefined, isUserAdmin);
+            } else {
+              loadLocalUsers();
+            }
           } catch (sessionErr) {
-            console.error('Failed to restore live session:', sessionErr);
+            console.warn('Failed to restore live session:', sessionErr);
             loadLocalUsers();
           }
         }
       } else {
         loadLocalData();
         loadLocalUsers();
+
+        // Restore local mode session from localStorage on reload
+        const savedLocalUser = localStorage.getItem('mauritius_directory_mock_user');
+        if (savedLocalUser) {
+          const emailLower = savedLocalUser.trim().toLowerCase();
+          setUserEmail(emailLower);
+          
+          const localAdminsRaw = localStorage.getItem('mauritius_directory_local_admins') || '["hello.bhagavati@gmail.com"]';
+          let localAdmins: string[] = [];
+          try {
+            localAdmins = JSON.parse(localAdminsRaw);
+          } catch {
+            localAdmins = ["hello.bhagavati@gmail.com"];
+          }
+          
+          const isUserAdmin = localAdmins.includes(emailLower) || emailLower === 'hello.bhagavati@gmail.com';
+          setIsAdmin(isUserAdmin);
+        }
       }
     }
 
@@ -287,17 +322,31 @@ export default function App() {
   };
 
   // Load users from Supabase with fallback to local storage
-  const loadSupabaseUsers = async () => {
+  const loadSupabaseUsers = async (forcedEmail?: string, forcedIsAdmin?: boolean) => {
     if (!supabase) {
       loadLocalUsers();
       return;
     }
+
+    const currentEmail = forcedEmail !== undefined ? forcedEmail : userEmail;
+    const currentIsAdmin = forcedIsAdmin !== undefined ? forcedIsAdmin : isAdmin;
+
+    // Only attempt to query profiles if user is an admin or hello.bhagavati@gmail.com
+    if (!currentIsAdmin && currentEmail !== 'hello.bhagavati@gmail.com') {
+      loadLocalUsers();
+      return;
+    }
+
     try {
       const { data: profiles, error } = await supabase
         .from('profiles')
         .select('*');
       
-      if (error) throw error;
+      if (error) {
+        console.warn('Profiles fetch from Supabase restricted, using local state:', error.message);
+        loadLocalUsers();
+        return;
+      }
 
       const userList: UserAccount[] = (profiles || []).map((p: any) => ({
         id: p.id,
@@ -319,8 +368,8 @@ export default function App() {
       }
 
       setUsers(userList);
-    } catch (err) {
-      console.error('profiles fetch failed, falling back to local users state', err);
+    } catch (err: any) {
+      console.warn('Profiles fetch failed, falling back to local users state', err?.message || err);
       loadLocalUsers();
     }
   };
