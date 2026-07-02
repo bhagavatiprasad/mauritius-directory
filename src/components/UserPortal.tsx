@@ -192,8 +192,9 @@ export default function UserPortal({
       } else {
         // Real Supabase flow
         if (supabase) {
+          const redirectUrl = window.location.origin + window.location.pathname;
           const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
-            redirectTo: window.location.origin
+            redirectTo: redirectUrl
           });
           if (error) throw error;
           setForgotStatus({ success: 'A password reset link has been dispatched to your email address.' });

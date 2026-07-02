@@ -46,6 +46,110 @@ export default function App() {
   // App running Mode status
   const [isLocalMode, setIsLocalMode] = useState(!isSupabaseConfigured);
 
+  // Password Reset modal states
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  // Parse recovery token on load
+  useEffect(() => {
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    if (
+      hash.includes('type=recovery') || 
+      search.includes('type=recovery') || 
+      hash.includes('recovery_token=') || 
+      (hash.includes('access_token=') && hash.includes('type=recovery'))
+    ) {
+      setIsRecoveryMode(true);
+      setActiveTab('owner');
+    }
+  }, []);
+
+  // Listen for Supabase auth state change events (including PASSWORD_RECOVERY)
+  useEffect(() => {
+    if (isLocalMode || !supabase) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Supabase Auth Event:', event, session);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+        setActiveTab('owner');
+      }
+      if (session?.user) {
+        setSession(session);
+        setUserEmail(session.user.email || '');
+        
+        // Fetch profile
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', session.user.id)
+            .single();
+
+          if (profile) {
+            setIsAdmin(profile.is_admin || session.user.email === 'hello.bhagavati@gmail.com');
+          } else if (session.user.email === 'hello.bhagavati@gmail.com') {
+            setIsAdmin(true);
+          }
+        } catch (err) {
+          console.error('Error fetching profile on auth state change:', err);
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [isLocalMode]);
+
+  const handlePasswordResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+    setResetSuccess(null);
+
+    if (newPassword.length < 6) {
+      setResetError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPassword !== resetConfirmPassword) {
+      setResetError('Passwords do not match.');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      if (!isLocalMode && supabase) {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword
+        });
+        if (error) throw error;
+        setResetSuccess('Password has been updated successfully!');
+      } else {
+        // Local mode fallback
+        const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';
+        const storedUsers = JSON.parse(storedUsersRaw);
+        if (userEmail) {
+          storedUsers[userEmail.toLowerCase()] = newPassword;
+          localStorage.setItem('mauritius_directory_mock_users', JSON.stringify(storedUsers));
+          setResetSuccess('Password updated successfully (Local Safe Fallback)!');
+        } else {
+          setResetError('No authenticated user session found to update.');
+        }
+      }
+    } catch (err: any) {
+      console.error('Password reset failure:', err);
+      setResetError(err.message || 'Failed to update password.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   // Fetch initial data
   useEffect(() => {
     async function initData() {
@@ -992,6 +1096,114 @@ export default function App() {
           <p>&copy; {new Date().getFullYear()} Mauritius Local Business Directory. All commercial listings verified under clean moderation protocols.</p>
         </div>
       </footer>
+
+      {/* Password Reset Modal Overlay */}
+      {isRecoveryMode && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" id="password-reset-overlay">
+          <div className="bg-white rounded-xl border border-stone-200 shadow-xl max-w-md w-full p-6 md:p-8 space-y-6" id="password-reset-modal">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 bg-amber-50 border border-amber-200 text-amber-600 rounded-lg flex items-center justify-center mx-auto">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <h2 className="text-xl font-bold text-stone-900 tracking-tight">
+                Secure Your Account
+              </h2>
+              <p className="text-xs text-stone-500 leading-relaxed">
+                Please enter and confirm your new password below.
+              </p>
+            </div>
+
+            {resetError && (
+              <div className="p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-700 text-xs flex gap-2.5 items-start" id="reset-error-msg">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{resetError}</span>
+              </div>
+            )}
+
+            {resetSuccess ? (
+              <div className="space-y-4" id="reset-success-block">
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs flex gap-2.5 items-start">
+                  <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+                  <div>
+                    <p className="font-bold mb-1">Password Changed Successfully!</p>
+                    <p className="leading-relaxed">Your password has been securely updated. You can now access your business listings.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsRecoveryMode(false);
+                    setNewPassword('');
+                    setResetConfirmPassword('');
+                    setResetSuccess(null);
+                    // Clear hash from address bar
+                    try {
+                      window.history.replaceState(null, '', window.location.origin + window.location.pathname);
+                    } catch (e) {
+                      console.warn('Could not clean address bar:', e);
+                    }
+                  }}
+                  className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-semibold rounded-lg transition-colors text-sm"
+                >
+                  Continue to App
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handlePasswordResetSubmit} className="space-y-4" id="password-reset-form">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-stone-600 block">New Password</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Minimum 6 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-stone-50/50 border border-stone-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-stone-500/10 focus:border-stone-500 transition-all placeholder:text-stone-400"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-stone-600 block">Confirm New Password</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Re-enter new password"
+                    value={resetConfirmPassword}
+                    onChange={(e) => setResetConfirmPassword(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-stone-50/50 border border-stone-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-stone-500/10 focus:border-stone-500 transition-all placeholder:text-stone-400"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRecoveryMode(false);
+                      // Clear hash
+                      try {
+                        window.history.replaceState(null, '', window.location.origin + window.location.pathname);
+                      } catch (e) {}
+                    }}
+                    className="flex-1 py-2.5 border border-stone-200 hover:bg-stone-50 text-stone-600 font-semibold rounded-lg transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="flex-1 py-2.5 bg-stone-900 hover:bg-stone-850 disabled:bg-stone-400 text-white font-semibold rounded-lg transition-all text-sm flex items-center justify-center gap-2"
+                  >
+                    {resetLoading ? (
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    ) : (
+                      'Update Password'
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
