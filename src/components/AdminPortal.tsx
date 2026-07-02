@@ -970,62 +970,28 @@ export default function AdminPortal({
       {adminTab === 'users' && (
         <div className="grid md:grid-cols-3 gap-8 animate-in fade-in duration-200" id="user-accounts-manager">
           
-          {/* Add New User form */}
+          {/* Add New User info banner */}
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs h-fit space-y-4">
             <h3 className="font-semibold text-stone-950 text-sm flex items-center gap-2 pb-2 border-b border-stone-100">
               <UserPlus className="w-4.5 h-4.5 text-stone-600" />
               Register New User Account
             </h3>
 
-            {userAddError && (
-              <div className="p-2.5 bg-red-50 border border-red-100 rounded-lg text-red-700 text-xs flex gap-2 items-start">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{userAddError}</span>
+            <div className="p-4 bg-amber-50/70 border border-amber-100 rounded-xl text-amber-950 text-xs leading-relaxed space-y-3">
+              <div className="flex gap-2 items-center font-bold">
+                <AlertTriangle className="w-4 h-4 text-amber-750 shrink-0" />
+                <span>Security: Register in Supabase Dashboard</span>
               </div>
-            )}
-
-            {userAddSuccess && (
-              <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-850 text-xs flex gap-2 items-start">
-                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{userAddSuccess}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleAddUserSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-stone-600 block">User Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="owner@example.mu"
-                  value={newUserEmail}
-                  onChange={(e) => setNewUserEmail(e.target.value)}
-                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-850 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-stone-600 block">Initial Password</label>
-                <input
-                  type="text"
-                  placeholder="Temporary password"
-                  value={newUserPassword}
-                  onChange={(e) => setNewUserPassword(e.target.value)}
-                  className="w-full bg-stone-50/50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-855 focus:outline-none focus:ring-1 focus:ring-stone-400 focus:bg-white"
-                />
-                <span className="text-[10px] text-stone-400 block leading-normal">
-                  If left blank, a default temporary secure password will be assigned.
-                </span>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 bg-stone-900 hover:bg-stone-850 text-white text-xs font-semibold rounded-lg transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Create User Account</span>
-              </button>
-            </form>
+              <p>
+                To avoid session disruption or hijacking on this client-side static site, adding user accounts has been moved exclusively to the <strong>Supabase Dashboard</strong>.
+              </p>
+              <p>
+                As an administrator, please navigate to your Supabase project under <strong>Authentication &gt; Users &gt; Add User</strong>.
+              </p>
+              <p className="text-[11px] text-stone-500 font-medium">
+                New accounts created there can log in immediately. Their local profile row is self-healed on first login.
+              </p>
+            </div>
           </div>
 
           {/* User Accounts list */}

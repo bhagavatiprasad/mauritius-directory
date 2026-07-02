@@ -499,6 +499,40 @@ export default function App() {
     localStorage.setItem('mauritius_directory_admin_password', newPass);
   };
 
+  const dataURLtoBlob = (dataUrl: string): { blob: Blob; mime: string } => {
+    const parts = dataUrl.split(',');
+    const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return { blob: new Blob([u8arr], { type: mime }), mime };
+  };
+
+  const deleteImageFromStorageIfNeeded = async (imageUrl?: string) => {
+    if (!imageUrl || isLocalMode || !supabase) return;
+    const storageMarker = '/storage/v1/object/public/listing-images/';
+    if (imageUrl.includes(storageMarker)) {
+      try {
+        const filePath = imageUrl.split(storageMarker)[1];
+        if (filePath) {
+          const { error } = await supabase.storage
+            .from('listing-images')
+            .remove([filePath]);
+          if (error) {
+            console.error('Failed to remove image from Supabase Storage:', error);
+          } else {
+            console.log('Successfully removed image from Supabase Storage:', filePath);
+          }
+        }
+      } catch (err) {
+        console.error('Exception when removing image from Supabase Storage:', err);
+      }
+    }
+  };
+
   // User Save Listing (Strict Single Business Rule)
   const handleSaveListing = async (
     listingData: Omit<Business, 'id' | 'user_id' | 'status'> & { id?: string }
@@ -507,8 +541,39 @@ export default function App() {
 
     const status = 'pending'; // Reverts back to pending on insert/edit for approval loop safety
 
+    let imageUrl = listingData.image_url;
+
     if (!isLocalMode && supabase && session?.user) {
       try {
+        // If the image is a base64 string, upload to Supabase Storage instead of saving base64 to DB
+        if (imageUrl && imageUrl.startsWith('data:image/')) {
+          try {
+            const { blob, mime } = dataURLtoBlob(imageUrl);
+            const fileExt = mime.split('/')[1] || 'jpeg';
+            const fileName = `${session.user.id}-${Date.now()}.${fileExt}`;
+            const filePath = `listings/${fileName}`;
+
+            const { error: uploadErr } = await supabase.storage
+              .from('listing-images')
+              .upload(filePath, blob, {
+                contentType: mime,
+                cacheControl: '3600',
+                upsert: true
+              });
+
+            if (uploadErr) throw uploadErr;
+
+            const { data: publicUrlData } = supabase.storage
+              .from('listing-images')
+              .getPublicUrl(filePath);
+
+            imageUrl = publicUrlData.publicUrl;
+          } catch (err: any) {
+            console.error('Failed to upload image to Supabase Storage:', err);
+            return { success: false, error: `Image upload failed: ${err.message}` };
+          }
+        }
+
         if (listingData.id) {
           // Update - Check security ownership/auth
           const existingListing = businesses.find(b => b.id === listingData.id);
@@ -517,6 +582,11 @@ export default function App() {
                             existingListing.user_id?.toLowerCase() === userEmail.toLowerCase();
             if (!isOwner && !isAdmin) {
               return { success: false, error: 'Unauthorized: You do not have permission to modify this listing.' };
+            }
+
+            // Cleanup old image from storage if the image was replaced
+            if (imageUrl !== existingListing.image_url && existingListing.image_url) {
+              await deleteImageFromStorageIfNeeded(existingListing.image_url);
             }
           }
 
@@ -530,7 +600,7 @@ export default function App() {
               phone: listingData.phone,
               whatsapp: listingData.whatsapp,
               hours: listingData.hours,
-              image_url: listingData.image_url,
+              image_url: imageUrl,
               status
             })
             .eq('id', listingData.id);
@@ -575,7 +645,7 @@ export default function App() {
               phone: listingData.phone,
               whatsapp: listingData.whatsapp,
               hours: listingData.hours,
-              image_url: listingData.image_url,
+              image_url: imageUrl,
               status,
               created_at: new Date().toISOString()
             });
@@ -685,6 +755,9 @@ export default function App() {
 
     if (!isLocalMode && supabase) {
       try {
+        if (existingListing.image_url) {
+          await deleteImageFromStorageIfNeeded(existingListing.image_url);
+        }
         const { error } = await supabase
           .from('listings')
           .update({ image_url: '' })
@@ -769,6 +842,9 @@ export default function App() {
 
     if (!isLocalMode && supabase) {
       try {
+        if (existingListing.image_url) {
+          await deleteImageFromStorageIfNeeded(existingListing.image_url);
+        }
         const { error } = await supabase
           .from('listings')
           .delete()
@@ -831,13 +907,52 @@ export default function App() {
     }
     if (!isLocalMode && supabase) {
       try {
+        const existingListing = businesses.find(b => b.id === id);
+        let fields = { ...updatedFields };
+
+        // Support base64 upload if admin somehow entered it
+        if (fields.image_url && fields.image_url.startsWith('data:image/')) {
+          try {
+            const { blob, mime } = dataURLtoBlob(fields.image_url);
+            const fileExt = mime.split('/')[1] || 'jpeg';
+            const fileName = `admin-${Date.now()}.${fileExt}`;
+            const filePath = `listings/${fileName}`;
+
+            const { error: uploadErr } = await supabase.storage
+              .from('listing-images')
+              .upload(filePath, blob, {
+                contentType: mime,
+                cacheControl: '3600',
+                upsert: true
+              });
+
+            if (!uploadErr) {
+              const { data: publicUrlData } = supabase.storage
+                .from('listing-images')
+                .getPublicUrl(filePath);
+              
+              if (existingListing?.image_url) {
+                await deleteImageFromStorageIfNeeded(existingListing.image_url);
+              }
+              fields.image_url = publicUrlData.publicUrl;
+            }
+          } catch (err) {
+            console.error('Admin image upload failed:', err);
+          }
+        } else if (fields.image_url !== undefined && existingListing && fields.image_url !== existingListing.image_url) {
+          // If image url changed to some other URL, delete the old one
+          if (existingListing.image_url) {
+            await deleteImageFromStorageIfNeeded(existingListing.image_url);
+          }
+        }
+
         const { error } = await supabase
           .from('listings')
-          .update(updatedFields)
+          .update(fields)
           .eq('id', id);
         
         if (!error) {
-          setBusinesses(businesses.map(b => b.id === id ? { ...b, ...updatedFields } : b));
+          setBusinesses(businesses.map(b => b.id === id ? { ...b, ...fields } : b));
         }
       } catch (err) {
         setBusinesses(businesses.map(b => b.id === id ? { ...b, ...updatedFields } : b));
@@ -1041,47 +1156,10 @@ export default function App() {
       return false;
     }
     const emailLower = email.trim().toLowerCase();
-    const finalPassword = password || 'TemporarySecurePassword123!';
     
     if (!isLocalMode && supabase) {
-      try {
-        // 1. Sign up the user in Supabase Auth to create their official authentication credentials
-        const { data: authData, error: authErr } = await supabase.auth.signUp({
-          email: emailLower,
-          password: finalPassword,
-        });
-
-        if (authErr) {
-          console.error('Auth signup failed during admin add:', authErr);
-        }
-
-        const profileId = authData?.user?.id || `simulated-id-${Date.now()}`;
-
-        // 2. Insert into the public.profiles table so they are visible and queryable
-        const { error: profileErr } = await supabase
-          .from('profiles')
-          .insert({
-            id: profileId,
-            email: emailLower,
-            is_admin: false,
-            created_at: new Date().toISOString()
-          });
-        
-        if (profileErr) {
-          console.error('Profiles insert failed during admin add:', profileErr);
-          // Try to upsert in case of existing id
-          await supabase.from('profiles').upsert({
-            id: profileId,
-            email: emailLower,
-            is_admin: false
-          });
-        }
-        
-        await loadSupabaseUsers();
-        return true;
-      } catch (err) {
-        console.error('Failed to register user in Supabase profiles', err);
-      }
+      alert('Security Notice: To prevent session conflict on this client-side static site, please register new user accounts directly in the Supabase Dashboard (Authentication > Users).');
+      return false;
     }
 
     const storedUsersRaw = localStorage.getItem('mauritius_directory_mock_users') || '{}';

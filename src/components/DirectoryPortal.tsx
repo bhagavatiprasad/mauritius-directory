@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Business, Category, MAURITIUS_DISTRICTS } from '../types';
 import { 
   Search, 
@@ -49,6 +49,45 @@ export default function DirectoryPortal({ businesses, categories, isLocalMode }:
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
   const [activeDetailBusiness, setActiveDetailBusiness] = useState<Business | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Deep-linking effect on load and when businesses list is loaded
+  useEffect(() => {
+    if (businesses && businesses.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const listingId = params.get('listing');
+      if (listingId) {
+        const found = businesses.find(b => b.id === listingId);
+        if (found) {
+          setActiveDetailBusiness(found);
+        }
+      } else {
+        // Also check hash fallback
+        const hash = window.location.hash || '';
+        if (hash.startsWith('#/listing/')) {
+          const hashId = hash.replace('#/listing/', '');
+          const found = businesses.find(b => b.id === hashId);
+          if (found) {
+            setActiveDetailBusiness(found);
+          }
+        }
+      }
+    }
+  }, [businesses]);
+
+  // Sync active listing to URL so users can copy-paste shareable links!
+  const handleSetActiveDetailBusiness = (biz: Business | null) => {
+    setActiveDetailBusiness(biz);
+    
+    const url = new URL(window.location.href);
+    if (biz) {
+      url.searchParams.set('listing', biz.id);
+      url.hash = `#/listing/${biz.id}`;
+    } else {
+      url.searchParams.delete('listing');
+      url.hash = '';
+    }
+    window.history.pushState({}, '', url.toString());
+  };
 
   // Filter logic: Only approved businesses are shown on the public directory
   const approvedBusinesses = businesses.filter(b => b.status === 'approved');
@@ -274,7 +313,7 @@ export default function DirectoryPortal({ businesses, categories, isLocalMode }:
                       Verified Listing
                     </span>
                     <button
-                      onClick={() => setActiveDetailBusiness(biz)}
+                      onClick={() => handleSetActiveDetailBusiness(biz)}
                       className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-stone-50 text-stone-800 text-xs font-semibold rounded-lg transition-colors border border-stone-200"
                     >
                       <Eye className="w-3.5 h-3.5" />
@@ -301,7 +340,7 @@ export default function DirectoryPortal({ businesses, categories, isLocalMode }:
                 className="w-full h-full object-cover"
               />
               <button
-                onClick={() => setActiveDetailBusiness(null)}
+                onClick={() => handleSetActiveDetailBusiness(null)}
                 className="absolute top-3 right-3 bg-stone-900/70 hover:bg-stone-900/90 text-white p-1.5 rounded-full transition-colors"
                 aria-label="Close modal"
               >
